@@ -4,15 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Lector de Seriales - Inventario TI</title>
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Html5-Qrcode (Motor Base) -->
   <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- Quagga2 CDN: Localizador geométrico de códigos rotados/deformados -->
+  <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+
   <style>
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
     #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 220px; }
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
-    /* Láser de enfoque activo solo en modo continuo */
     .laser-line {
       position: absolute; top: 50%; left: 8%; right: 8%; height: 2px;
       background: rgba(16, 185, 129, 0.85); box-shadow: 0 0 10px rgba(16, 185, 129, 1);
@@ -36,7 +40,7 @@
   <!-- Barra Superior -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
-      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
+      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI V0.1</h1>
       <p class="text-[11px] text-emerald-400 font-semibold" id="header-mode-desc">Modo Continuo (Code 128/39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
@@ -47,7 +51,7 @@
   <!-- CONTENEDOR PRINCIPAL -->
   <main class="flex-1 p-3 pb-24 overflow-y-auto space-y-3 max-w-md mx-auto w-full">
     
-    <!-- SECCIÓN CÁMARA GLOBAL (Visible tanto en Continuo como en Foto Lote) -->
+    <!-- SECCIÓN CÁMARA GLOBAL -->
     <div id="camera-global-wrapper" class="space-y-2">
       
       <!-- Observación Fija -->
@@ -63,7 +67,7 @@
         />
       </div>
 
-      <!-- Visor de Cámara en Vivo Constante -->
+      <!-- Visor de Cámara en Vivo -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[170px] flex items-center justify-center">
         <div id="reader"></div>
         <div id="laser-line" class="laser-line hidden"></div>
@@ -92,7 +96,7 @@
 
     </div>
 
-    <!-- PESTAÑA 1: MODO CONTINUO (Acciones Rápidas) -->
+    <!-- PESTAÑA 1: MODO CONTINUO -->
     <section id="panel-scan" class="space-y-2.5">
       <button 
         onclick="copiarParaSheets()" 
@@ -104,7 +108,6 @@
         <span>📋 Copiar Lista para Sheets / Excel</span>
       </button>
 
-      <!-- Entrada manual -->
       <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl flex gap-2">
         <input 
           type="text" 
@@ -119,10 +122,10 @@
       </div>
     </section>
 
-    <!-- PESTAÑA 2: MODO FOTO MULTI-SCAN (Viendo la cámara en vivo) -->
+    <!-- PESTAÑA 2: FOTO MULTI-SCAN (PERSPECTIVA CORREGIDA + MICROVISOR) -->
     <section id="panel-photo" class="hidden space-y-3">
       
-      <!-- Botón de Disparo: Congelar mientras miras la cámara -->
+      <!-- Disparo en Vivo -->
       <div id="controls-capture-live" class="space-y-2">
         <button 
           onclick="congelarYEnmarcar()" 
@@ -132,15 +135,15 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
           </svg>
-          <span>📸 Congelar y Enmarcar Códigos</span>
+          <span>📸 Congelar, Nivelar y Enmarcar</span>
         </button>
-        <p class="text-[11px] text-center text-slate-500">Apunta a la caja con ambos códigos en pantalla y pulsa el botón.</p>
+        <p class="text-[11px] text-center text-slate-500">Corrige inclinación de la caja y aclara códigos diminutos.</p>
       </div>
 
-      <!-- Tarjeta con la Foto Congelada y los Marcos Interactivos -->
+      <!-- Tarjeta Interactiva con Foto y Marcos -->
       <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-3">
         <div class="flex justify-between items-center px-1">
-          <span class="text-xs font-bold text-slate-200">Foto Congelada</span>
+          <span class="text-xs font-bold text-slate-200">Etiqueta Enmarcada</span>
           <button onclick="reanudarCamaraEnVivo()" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
             <span>🔄</span> Repetir foto
           </button>
@@ -148,18 +151,32 @@
 
         <div class="relative overflow-hidden rounded-lg border border-slate-700 bg-black flex justify-center items-center">
           <canvas id="photo-canvas" class="max-w-full h-auto cursor-pointer block"></canvas>
-          <div id="photo-loading-overlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-xs text-emerald-400 gap-2">
+          <div id="photo-loading-overlay" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-xs text-emerald-400 gap-2">
             <svg class="animate-spin h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            Detectando códigos...
+            <span id="loading-step-text">Procesando perspectiva y bordes...</span>
           </div>
+        </div>
+
+        <!-- MICROVISOR DE DIAGNÓSTICO -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
+              <span>🔬</span> Microvisor: Imagen Binarizada / Deskew
+            </span>
+            <span id="micro-status" class="text-[9px] text-emerald-400 font-mono">Nivelando...</span>
+          </div>
+          <div class="overflow-x-auto overflow-y-hidden rounded border border-slate-800 bg-black flex justify-center p-1">
+            <canvas id="micro-canvas" class="h-20 w-auto object-contain block"></canvas>
+          </div>
+          <p class="text-[10px] text-slate-500">Muestra el contraste real que procesa el motor (barras negras puras y niveladas).</p>
         </div>
 
         <div class="flex items-center justify-between px-1 text-[11px]">
           <span class="text-slate-400">Toca el recuadro para marcar/desmarcar:</span>
-          <button onclick="marcarTodos(true)" class="text-indigo-400 hover:underline">Todos</button>
+          <button onclick="marcarTodos(true)" class="text-indigo-400 hover:underline">Marcar todos</button>
         </div>
 
         <!-- Lista de Códigos Detectados -->
@@ -194,7 +211,7 @@
 
   </main>
 
-  <!-- NAVEGACIÓN INFERIOR (3 Pestañas) -->
+  <!-- NAVEGACIÓN INFERIOR -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
     <button id="btn-nav-scan" onclick="switchTab('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -224,9 +241,8 @@
     let isTorchOn = false;
     let lastCode = '';
     let lastTime = 0;
-    let currentTab = 'scan'; // 'scan', 'photo', 'list'
+    let currentTab = 'scan';
 
-    // Datos de la foto congelada
     let imagenActual = null;
     let codigosDetectados = [];
 
@@ -323,7 +339,6 @@
       const limpio = limpiarSerial(serialBruto);
       if (!limpio) return false;
 
-      // Si es el UPC de 12 dígitos, ignorarlo
       if (/^\d{12}$/.test(limpio)) {
         if (!silencio) showToast("UPC comercial ignorado", "warn", 1200);
         return false;
@@ -388,7 +403,6 @@
 
     // --- CÁMARA EN VIVO ---
     function onScanSuccess(decodedText) {
-      // Si el usuario está en la pestaña "Foto Lote", no registrar en automático
       if (currentTab === 'photo') return;
 
       const raw = String(decodedText || '').trim();
@@ -498,7 +512,163 @@
     }
 
     // =========================================================================
-    // --- FOTO MULTI-SCAN (VIENDO LA CÁMARA Y CONGELANDO EN VIVO) ---
+    // --- MOTOR DE PREPROCESAMIENTO Y CORRECCIÓN DE PERSPECTIVA (DESKEW) ---
+    // =========================================================================
+
+    /**
+     * Calcula la inclinación geométrica mediante análisis de gradientes cruzados
+     */
+    function estimarAnguloInclinacion(gray, width, height) {
+      const stepY = Math.floor(height / 6);
+      let bestAngle = 0;
+      let maxVariance = 0;
+
+      for (let deg = -16; deg <= 16; deg += 2) {
+        const rad = (deg * Math.PI) / 180;
+        const tan = Math.tan(rad);
+        let varianceSum = 0;
+
+        for (let yIndex = 2; yIndex <= 4; yIndex++) {
+          const cy = yIndex * stepY;
+          let prevVal = 0;
+          let diffSum = 0;
+
+          for (let x = 15; x < width - 15; x += 3) {
+            const shiftY = Math.round(cy + (x - width / 2) * tan);
+            if (shiftY >= 0 && shiftY < height) {
+              const val = gray[shiftY * width + x];
+              diffSum += Math.abs(val - prevVal);
+              prevVal = val;
+            }
+          }
+          varianceSum += diffSum;
+        }
+
+        if (varianceSum > maxVariance) {
+          maxVariance = varianceSum;
+          bestAngle = deg;
+        }
+      }
+      return bestAngle;
+    }
+
+    /**
+     * Pipeline de visión: Rotación afín + Convolución + Binarización Otsu local + Relleno 1D
+     */
+    function preprocesarCanvasConCorreccion(srcCanvas) {
+      const w = srcCanvas.width;
+      const h = srcCanvas.height;
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      tempCtx.drawImage(srcCanvas, 0, 0);
+      const rawData = tempCtx.getImageData(0, 0, w, h).data;
+
+      const grayInit = new Uint8Array(w * h);
+      for (let i = 0, j = 0; i < rawData.length; i += 4, j++) {
+        grayInit[j] = (rawData[i] * 77 + rawData[i + 1] * 150 + rawData[i + 2] * 29) >> 8;
+      }
+
+      // Estimar inclinación de perspectiva
+      const angle = estimarAnguloInclinacion(grayInit, w, h);
+
+      // Canvas rotado y rectificado
+      const rectCanvas = document.createElement('canvas');
+      rectCanvas.width = w;
+      rectCanvas.height = h;
+      const rectCtx = rectCanvas.getContext('2d', { willReadFrequently: true });
+
+      rectCtx.save();
+      rectCtx.translate(w / 2, h / 2);
+      if (Math.abs(angle) >= 2) {
+        rectCtx.rotate((-angle * Math.PI) / 180);
+      }
+      // Compensación de aspect-ratio trapezoidal
+      rectCtx.scale(1.05, 1.0);
+      rectCtx.drawImage(srcCanvas, -w / 2, -h / 2);
+      rectCtx.restore();
+
+      const imgData = rectCtx.getImageData(0, 0, w, h);
+      const data = imgData.data;
+      const gray = new Uint8Array(w * h);
+
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+      }
+
+      // Convolución 3x3 (Unsharp mask para separar barras pegadas)
+      const sharpened = new Uint8Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        const rowP = (y - 1) * w;
+        const rowC = y * w;
+        const rowN = (y + 1) * w;
+        for (let x = 1; x < w - 1; x++) {
+          const val = 5 * gray[rowC + x] - gray[rowP + x] - gray[rowN + x] - gray[rowC + x - 1] - gray[rowC + x + 1];
+          sharpened[rowC + x] = val < 0 ? 0 : (val > 255 ? 255 : val);
+        }
+      }
+
+      // Umbral adaptativo local por Integral Image
+      const S = Math.max(16, Math.floor(w / 18));
+      const T = 0.12;
+      const binary = new Uint8Array(w * h);
+      const integral = new Uint32Array(w * h);
+
+      for (let y = 0; y < h; y++) {
+        let sum = 0;
+        const offset = y * w;
+        for (let x = 0; x < w; x++) {
+          sum += sharpened[offset + x];
+          integral[offset + x] = (y === 0 ? 0 : integral[offset - w + x]) + sum;
+        }
+      }
+
+      const s2 = S >> 1;
+      for (let y = 0; y < h; y++) {
+        const y1 = Math.max(0, y - s2);
+        const y2 = Math.min(h - 1, y + s2);
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          const x1 = Math.max(0, x - s2);
+          const x2 = Math.min(w - 1, x + s2);
+          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+          const sum = integral[y2 * w + x2] - integral[y1 * w + x2] - integral[y2 * w + x1] + integral[y1 * w + x1];
+
+          binary[row + x] = (sharpened[row + x] * count <= sum * (1 - T)) ? 0 : 255;
+        }
+      }
+
+      // Reparación morfológica vertical (Cierre 1D sin ensanchar grosor)
+      const repaired = new Uint8Array(w * h);
+      repaired.set(binary);
+
+      for (let y = 1; y < h - 1; y++) {
+        const rowP = (y - 1) * w;
+        const rowC = y * w;
+        const rowN = (y + 1) * w;
+        for (let x = 0; x < w; x++) {
+          if (binary[rowC + x] === 255 && binary[rowP + x] === 0 && binary[rowN + x] === 0) {
+            repaired[rowC + x] = 0;
+          }
+        }
+      }
+
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        const color = repaired[j];
+        data[i] = color;
+        data[i + 1] = color;
+        data[i + 2] = color;
+        data[i + 3] = 255;
+      }
+      rectCtx.putImageData(imgData, 0, 0);
+
+      return { canvasProcesado: rectCanvas, anguloDetectado: angle };
+    }
+
+    // =========================================================================
+    // --- FOTO MULTI-SCAN (QUAGGA2 LOCATOR + BARCODEDETECTOR HÍBRIDO) ---
     // =========================================================================
 
     function congelarYEnmarcar() {
@@ -508,7 +678,6 @@
         return;
       }
 
-      // Capturar fotograma de alta resolución
       const canvas = document.createElement("canvas");
       canvas.width = videoEl.videoWidth;
       canvas.height = videoEl.videoHeight;
@@ -523,49 +692,113 @@
     async function procesarImagenParaMultiScan(img) {
       imagenActual = img;
       
-      // Mostrar tarjeta de preview y ocultar botón de disparo inicial
       document.getElementById('controls-capture-live').classList.add('hidden');
       document.getElementById('photo-preview-card').classList.remove('hidden');
       const overlay = document.getElementById('photo-loading-overlay');
+      const stepText = document.getElementById('loading-step-text');
       overlay.classList.remove('hidden');
 
       codigosDetectados = [];
 
       try {
-        // Detección de múltiples códigos con coordenadas
-        if ('BarcodeDetector' in window) {
-          const detector = new BarcodeDetector({ 
-            formats: ['code_128', 'code_39', 'upc_a', 'ean_13', 'qr_code'] 
-          });
-          const barcodes = await detector.detect(img);
+        stepText.innerText = "Nivelando perspectiva y binarizando...";
 
-          codigosDetectados = barcodes.map((b, i) => {
-            const limpio = limpiarSerial(b.rawValue);
-            const esUPC = /^\d{12}$/.test(limpio) || b.format === 'upc_a';
-            return {
-              id: i,
-              raw: b.rawValue,
-              serial: limpio,
-              format: b.format,
-              box: {
-                x: b.boundingBox.x,
-                y: b.boundingBox.y,
-                w: b.boundingBox.width,
-                h: b.boundingBox.height
-              },
-              // Seleccionado por defecto: Si es serial sí, si es UPC no
-              selected: !esUPC
-            };
-          });
-        } 
-        
-        // Fallback si el navegador no tiene BarcodeDetector
-        if (codigosDetectados.length === 0 && html5QrCode) {
+        const rawCanvas = document.createElement("canvas");
+        rawCanvas.width = img.width;
+        rawCanvas.height = img.height;
+        const rawCtx = rawCanvas.getContext("2d");
+        rawCtx.drawImage(img, 0, 0);
+
+        // Capa de visión por computadora
+        const resultado = preprocesarCanvasConCorreccion(rawCanvas);
+        const processedCanvas = resultado.canvasProcesado;
+        const angulo = resultado.anguloDetectado;
+
+        actualizarMicrovisor(processedCanvas, angulo);
+
+        stepText.innerText = "Localizando y decodificando códigos...";
+
+        const detectadosMap = new Map();
+
+        // MOTOR 1: BarcodeDetector Nativo de Chrome / Android
+        if ('BarcodeDetector' in window) {
+          const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'upc_a', 'ean_13'] });
+
+          // Probar sobre imagen binarizada rectificada
+          let barcodes = await detector.detect(processedCanvas);
+          if (!barcodes || barcodes.length === 0) {
+            barcodes = await detector.detect(rawCanvas);
+          }
+
+          if (barcodes && barcodes.length > 0) {
+            barcodes.forEach((b) => {
+              const limpio = limpiarSerial(b.rawValue);
+              if (!limpio) return;
+              const esUPC = /^\d{12}$/.test(limpio) || b.format === 'upc_a';
+              const key = `${limpio}_${Math.round(b.boundingBox.x / 35)}`;
+
+              if (!detectadosMap.has(key)) {
+                detectadosMap.set(key, {
+                  id: detectadosMap.size,
+                  raw: b.rawValue,
+                  serial: limpio,
+                  format: b.format,
+                  box: {
+                    x: b.boundingBox.x,
+                    y: b.boundingBox.y,
+                    w: b.boundingBox.width,
+                    h: b.boundingBox.height
+                  },
+                  selected: !esUPC
+                });
+              }
+            });
+          }
+        }
+
+        // MOTOR 2 (Híbrido CDN): Quagga2 Locator (Especialista en encontrar códigos inclinados/deformados)
+        if (detectadosMap.size === 0 && typeof Quagga !== 'undefined') {
           try {
-            const tempFile = dataURLtoFile(img.src, "temp.jpg");
+            await new Promise((resolve) => {
+              Quagga.decodeSingle({
+                src: processedCanvas.toDataURL('image/jpeg', 0.9),
+                numOfWorkers: 0, // Ejecuta sincrónico en hilo UI sin trabar
+                inputStream: { size: img.width },
+                locator: { patchSize: "medium", halfSample: false },
+                decoder: { readers: ["code_128_reader", "code_39_reader"] }
+              }, function(result) {
+                if (result && result.codeResult) {
+                  const limpio = limpiarSerial(result.codeResult.code);
+                  const box = result.box || { x: img.width * 0.1, y: img.height * 0.35, w: img.width * 0.8, h: img.height * 0.3 };
+                  detectadosMap.set(limpio, {
+                    id: 0,
+                    raw: result.codeResult.code,
+                    serial: limpio,
+                    format: result.codeResult.format,
+                    box: {
+                      x: box.x || (img.width * 0.1),
+                      y: box.y || (img.height * 0.35),
+                      w: box.w || (img.width * 0.7),
+                      h: box.h || (img.height * 0.25)
+                    },
+                    selected: true
+                  });
+                }
+                resolve();
+              });
+            });
+          } catch (qErr) {
+            console.warn("Quagga single pass:", qErr);
+          }
+        }
+
+        // MOTOR 3 (Fallback General Html5Qrcode scanFile)
+        if (detectadosMap.size === 0 && html5QrCode) {
+          try {
+            const tempFile = dataURLtoFile(processedCanvas.toDataURL('image/jpeg', 1.0), "proc.jpg");
             const res = await html5QrCode.scanFile(tempFile, false);
             const limpio = limpiarSerial(res);
-            codigosDetectados.push({
+            detectadosMap.set(limpio, {
               id: 0,
               raw: res,
               serial: limpio,
@@ -576,19 +809,33 @@
           } catch (e) {}
         }
 
+        codigosDetectados = Array.from(detectadosMap.values());
+
       } catch (err) {
-        console.error("Error al detectar:", err);
+        console.error("Fallo durante el análisis:", err);
       } finally {
         overlay.classList.add('hidden');
         redibujarCanvasFoto();
         renderizarListaCodigosDetectados();
 
         if (codigosDetectados.length === 0) {
-          showToast("No se detectó código. Intenta a 15-20 cm", "warn", 2500);
+          showToast("No se detectó código nítido. Revisa el microvisor", "warn", 2500);
         } else {
-          showToast(`${codigosDetectados.length} código(s) encontrado(s)`, "success", 1500);
+          showToast(`${codigosDetectados.length} código(s) detectado(s)`, "success", 1500);
         }
       }
+    }
+
+    function actualizarMicrovisor(canvasProc, angulo) {
+      const microCanvas = document.getElementById('micro-canvas');
+      const microStatus = document.getElementById('micro-status');
+      const ctx = microCanvas.getContext('2d');
+
+      microCanvas.width = canvasProc.width;
+      microCanvas.height = canvasProc.height;
+      ctx.drawImage(canvasProc, 0, 0);
+
+      microStatus.innerText = `Deskew: ${angulo !== 0 ? (angulo > 0 ? `+${angulo}°` : `${angulo}°`) : '0° (Nivelado)'} | Binarizado 1D`;
     }
 
     function reanudarCamaraEnVivo() {
@@ -648,7 +895,6 @@
       });
     }
 
-    // Tocar el Canvas para alternar selección
     document.getElementById('photo-canvas').addEventListener('click', (e) => {
       if (!imagenActual || codigosDetectados.length === 0) return;
       const canvas = document.getElementById('photo-canvas');
@@ -771,12 +1017,10 @@
       const modeDesc = document.getElementById('header-mode-desc');
       const laserLine = document.getElementById('laser-line');
 
-      // Ocultar paneles inferiores
       pScan.classList.add('hidden');
       pPhoto.classList.add('hidden');
       pList.classList.add('hidden');
 
-      // Restaurar estilos de botones
       bScan.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
       bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
       bList.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
@@ -788,14 +1032,12 @@
         modeDesc.innerText = "Modo Continuo (Code 128/39)";
         laserLine.classList.remove('hidden');
       } else if (tab === 'photo') {
-        // En Foto Lote: CÁMARA SIEMPRE VISIBLE para poder apuntar
         camWrapper.classList.remove('hidden');
         pPhoto.classList.remove('hidden');
         bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
         modeDesc.innerText = "Foto Lote (Enmarcar Códigos)";
-        laserLine.classList.add('hidden'); // Apagamos el láser rojo continuo
+        laserLine.classList.add('hidden');
       } else {
-        // En la lista de seriales registrados: ocultamos la cámara para dar espacio a la tabla
         camWrapper.classList.add('hidden');
         pList.classList.remove('hidden');
         bList.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';

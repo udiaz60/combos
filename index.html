@@ -2,167 +2,269 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lector de Seriales - Inventario</title>
-  <!-- Tailwind CSS y Html5-Qrcode por CDN -->
+  <title>Inventario TI - Escáner de Seriales</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    /* Ajustes para el visor en móvil */
-    #reader { width: 100% !important; border: none !important; }
-    #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 240px; }
+    #reader {
+      width: 100% !important;
+      border: none !important;
+      background: transparent !important;
+    }
+    #reader video {
+      border-radius: 0.75rem;
+      object-fit: cover;
+      width: 100% !important;
+      max-height: 240px;
+    }
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
-    /* Guía visual roja */
-    .laser-line {
-      position: absolute; top: 50%; left: 8%; right: 8%; height: 2px;
-      background: rgba(239, 68, 68, 0.85); box-shadow: 0 0 8px rgba(239, 68, 68, 1);
-      transform: translateY(-50%); pointer-events: none; z-index: 10;
+    /* Guía láser horizontal calibrada para Code 128 */
+    .laser-guide {
+      position: absolute;
+      top: 50%;
+      left: 12%;
+      right: 12%;
+      height: 2px;
+      background: rgba(16, 185, 129, 0.85); /* Verde esmeralda de precisión */
+      box-shadow: 0 0 10px rgba(16, 185, 129, 1);
+      transform: translateY(-50%);
+      pointer-events: none;
+      z-index: 10;
     }
 
-    /* Animación Toast */
-    .toast-anim {
-      animation: popToast 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    @keyframes popToast {
-      from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    /* Animaciones del Toast flotante sin bloqueo */
+    .toast-enter { animation: toastIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .toast-exit { animation: toastOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-8px) scale(0.95); }
       to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes toastOut {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-6px) scale(0.95); }
     }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 flex flex-col min-h-screen select-none font-sans">
 
-  <!-- Toast Flotante No Bloqueante -->
-  <div id="toast-box" class="fixed top-14 left-0 right-0 z-50 flex flex-col items-center pointer-events-none px-4 max-w-sm mx-auto"></div>
+  <!-- TOASTS FLOTANTES NO BLOQUEANTES -->
+  <div id="toast-container" class="fixed top-14 left-0 right-0 z-50 flex flex-col items-center gap-1.5 pointer-events-none px-4 max-w-md mx-auto"></div>
 
-  <!-- Barra Superior -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
-    <div>
-      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
-      <p class="text-[11px] text-slate-400">Captura local / Copiar a Sheets</p>
+  <!-- BARRA SUPERIOR -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
+    <div class="flex items-center gap-2">
+      <div id="net-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" title="En línea"></div>
+      <div>
+        <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Lector de Seriales (Code 128)</h1>
+        <button onclick="cambiarOperador()" id="user-display" class="text-[11px] text-indigo-400 hover:underline block text-left">
+          Op: ...
+        </button>
+      </div>
     </div>
-    <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
-      0 seriales
-    </span>
+    
+    <!-- Controles de Cámara (Flash y Zoom) -->
+    <div class="flex items-center gap-1.5">
+      <div id="zoom-controls" class="hidden flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5 text-xs font-mono">
+        <button id="btn-zoom-1" onclick="aplicarZoom(1)" class="px-2 py-1 rounded bg-indigo-600 text-white font-bold">1x</button>
+        <button id="btn-zoom-2" onclick="aplicarZoom(2)" class="px-2 py-1 rounded text-slate-300 hover:text-white">2x</button>
+      </div>
+
+      <button id="btn-torch" onclick="toggleFlash()" class="hidden bg-slate-800 border border-slate-700 p-2 rounded-lg text-slate-300 active:bg-slate-700">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </button>
+
+      <span id="badge-pendientes" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
+        0 en cola
+      </span>
+    </div>
   </header>
 
-  <!-- Contenedor Principal -->
-  <main class="flex-1 p-3 pb-24 overflow-y-auto space-y-3 max-w-md mx-auto w-full">
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="flex-1 p-3 pb-24 overflow-y-auto space-y-3">
     
-    <!-- PESTAÑA 1: ESCÁNER -->
-    <section id="tab-scan" class="space-y-3">
+    <!-- VISTA ESCÁNER -->
+    <section id="view-scan" class="space-y-3">
       
-      <!-- Campo Observación Fija -->
+      <!-- Observación Fija -->
       <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-sm">
-        <label for="obs-input" class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-          Observación fija (Ubicación / Lote)
-        </label>
+        <div class="flex justify-between items-center mb-1">
+          <label for="obs-input" class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            Observación Fija
+          </label>
+          <span class="text-[10px] text-emerald-400 font-semibold">UPC de producto ignorado automáticamente</span>
+        </div>
         <input 
           type="text" 
           id="obs-input" 
-          placeholder="Ej: Sala 102 - Torre A (se mantiene fija)" 
+          placeholder="Ej: Sala 102 - Torre A (opcional)" 
           class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
         />
       </div>
 
-      <!-- Visor de Cámara Nativo Directo -->
+      <!-- Visor de Cámara con Alta Resolución -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner">
         <div id="reader"></div>
-        <div class="laser-line"></div>
-        <div id="loading-cam" class="p-8 text-center text-xs text-slate-400">
-          Iniciando cámara trasera...
+        <div class="laser-guide"></div>
+        <div id="loading-cam" class="p-6 text-center text-xs text-slate-400">
+          Iniciando lente macro en alta resolución...
         </div>
       </div>
 
-      <!-- Botón Linterna (si el teléfono la soporta) -->
-      <div class="flex justify-end">
-        <button id="btn-torch" onclick="toggleTorch()" class="hidden bg-slate-800 border border-slate-700 text-xs px-3 py-1.5 rounded-lg text-slate-300 active:bg-slate-700">
-          🔦 Linterna
+      <!-- Barra de Acción de Lote -->
+      <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between gap-2 shadow-sm">
+        <div>
+          <p class="text-xs font-bold text-slate-200">Lote en este teléfono</p>
+          <p class="text-[11px] text-slate-400" id="lote-desc">0 pendientes</p>
+        </div>
+        <button 
+          id="btn-subir" 
+          onclick="enviarLote()" 
+          disabled
+          class="bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          Sincronizar Lote
         </button>
       </div>
 
-      <!-- Botón de Acción Principal: Copiar para Google Sheets -->
-      <button 
-        onclick="copiarParaSheets()" 
-        class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
-        </svg>
-        <span>📋 Copiar Lista para Sheets / Excel</span>
-      </button>
-
-      <!-- Entrada manual de respaldo o pistola de código de barras -->
-      <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex gap-2">
-        <input 
-          type="text" 
-          id="manual-input" 
-          placeholder="Entrada manual o pistola USB..." 
-          onkeydown="if(event.key==='Enter') agregarManual();"
-          class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-        />
-        <button onclick="agregarManual()" class="bg-slate-800 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 text-slate-200">
-          +
-        </button>
+      <!-- Lista de Cola Local con Borrado Individual -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-sm space-y-2">
+        <div class="flex justify-between items-center pb-1 border-b border-slate-800">
+          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cola Local</span>
+          <button onclick="limpiarColaConfirm()" id="btn-vaciar" class="text-[11px] text-rose-400 hover:underline hidden">
+            Vaciar Todo
+          </button>
+        </div>
+        <div id="local-preview" class="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+          <p class="text-xs text-slate-600 text-center py-4">No hay seriales en espera.</p>
+        </div>
       </div>
     </section>
 
-    <!-- PESTAÑA 2: LISTA DE ESCANEADOS -->
-    <section id="tab-list" class="hidden space-y-3">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Seriales en Memoria Local</h2>
-        <button onclick="vaciarTodoConfirm()" class="text-xs text-rose-400 hover:underline">
-          Vaciar Todo
-        </button>
+    <!-- VISTA CONSULTA EN HOJA -->
+    <section id="view-records" class="hidden space-y-3">
+      <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-2">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Registros en la Nube</h2>
+          <button onclick="cargarRegistrosHoja()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded-lg text-slate-200 border border-slate-700 transition-colors">
+            Actualizar
+          </button>
+        </div>
+        <input 
+          type="text" 
+          id="search-input" 
+          placeholder="Buscar serial u observación..." 
+          oninput="filtrarRegistrosEnNube()" 
+          class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+        />
       </div>
-      <div id="items-container" class="space-y-1.5 max-h-[65vh] overflow-y-auto">
-        <!-- Renderizado dinámico -->
+
+      <div id="cloud-records-list" class="space-y-1.5">
+        <p class="text-xs text-slate-600 text-center py-6">Pulsa actualizar para ver los registros.</p>
       </div>
     </section>
 
   </main>
 
-  <!-- Navegación Inferior Móvil -->
-  <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
-    <button id="btn-nav-scan" onclick="switchNav('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
+  <!-- BARRA DE NAVEGACIÓN INFERIOR -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex justify-around p-2 z-30">
+    <button id="tab-scan-btn" onclick="switchTab('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
       </svg>
-      Escáner
+      Escaneo Local
     </button>
-    <button id="btn-nav-list" onclick="switchNav('list')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
+    <button id="tab-records-btn" onclick="switchTab('records')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
       </svg>
-      Lista (<span id="nav-count">0</span>)
+      Google Sheets
     </button>
   </nav>
 
   <script>
-    const STORAGE_KEY = 'inventario_html_seriales';
+    const STORAGE_KEY = 'inventario_lote_pro';
     let html5QrCode = null;
     let isProcessing = false;
+    let operarioNombre = '';
     let isTorchOn = false;
-    let lastCode = '';
-    let lastTime = 0;
 
-    // --- AUDIO SINTETIZADO (Web Audio API nativo sin archivos .mp3) ---
+    // Antirrebote
+    let lastScannedText = '';
+    let lastScannedTime = 0;
+
+    // --- TOASTS FLOTANTES NO BLOQUEANTES ---
+    function showToast(title, subtitle = '', type = 'info', duration = 1800) {
+      const container = document.getElementById('toast-container');
+      if (container.children.length >= 3) container.removeChild(container.firstChild);
+
+      const toast = document.createElement('div');
+      toast.className = `toast-enter flex items-center gap-2.5 px-3.5 py-2 rounded-xl border shadow-xl backdrop-blur-md text-xs pointer-events-none transition-all duration-200 max-w-[90%] w-auto `;
+
+      let iconSvg = '';
+      if (type === 'success') {
+        toast.className += 'bg-slate-900/90 border-emerald-500/60 text-emerald-300';
+        iconSvg = `<svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+      } else if (type === 'warn') {
+        toast.className += 'bg-slate-900/90 border-amber-500/60 text-amber-300';
+        iconSvg = `<svg class="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
+      } else if (type === 'error') {
+        toast.className += 'bg-slate-900/90 border-rose-500/60 text-rose-300';
+        iconSvg = `<svg class="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>`;
+      } else {
+        toast.className += 'bg-slate-900/90 border-indigo-500/60 text-indigo-300';
+        iconSvg = `<svg class="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+      }
+
+      toast.innerHTML = `
+        ${iconSvg}
+        <div class="leading-tight">
+          <div class="font-bold text-slate-100 font-mono text-[12px]">${title}</div>
+          ${subtitle ? `<div class="text-[10px] text-slate-400 mt-0.5">${subtitle}</div>` : ''}
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.remove('toast-enter');
+        toast.classList.add('toast-exit');
+        setTimeout(() => {
+          if (toast.parentNode === container) container.removeChild(toast);
+        }, 180);
+      }, duration);
+    }
+
+    // --- AUDIO ---
     let audioCtx = null;
-    function getAudioCtx() {
+    function getAudioContext() {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
       return audioCtx;
     }
 
-    function playTone(freq, duration, type = 'sine') {
+    function unlockAudio() {
+      getAudioContext();
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('click', unlockAudio);
+    }
+    document.addEventListener('touchstart', unlockAudio, { passive: true });
+    document.addEventListener('click', unlockAudio, { passive: true });
+
+    function playTone(freq, type, duration) {
       try {
-        const ctx = getAudioCtx();
+        const ctx = getAudioContext();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = type;
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -171,230 +273,379 @@
       } catch (e) {}
     }
 
-    const soundSuccess = () => playTone(1200, 0.06);
-    const soundDuplicate = () => { playTone(300, 0.1, 'square'); setTimeout(() => playTone(220, 0.12, 'square'), 110); };
+    const soundSuccess = () => playTone(1200, 'sine', 0.06);
+    const soundDuplicate = () => {
+      playTone(320, 'square', 0.1);
+      setTimeout(() => playTone(220, 'square', 0.12), 110);
+    };
 
-    // Desbloquear audio en el primer toque
-    document.addEventListener('touchstart', () => getAudioCtx(), { once: true });
-    document.addEventListener('click', () => getAudioCtx(), { once: true });
+    // --- DETECTOR DE CONEXIÓN ---
+    function updateNetworkStatus() {
+      const dot = document.getElementById('net-indicator');
+      if (navigator.onLine) {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50";
+        dot.title = "En línea";
+      } else {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50 animate-pulse";
+        dot.title = "Sin conexión (Modo Local)";
+      }
+    }
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
 
-    // --- GESTIÓN DE LOCALSTORAGE ---
-    function getDatos() {
+    // --- GESTIÓN DE COLA EN LOCALSTORAGE ---
+    function getColaLocal() {
       try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { return []; }
     }
 
-    function guardarDatos(items) {
+    function saveColaLocal(items) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-      renderizarLista();
+      renderizarColaLocal();
     }
 
-    function renderizarLista() {
-      const items = getDatos();
-      document.getElementById('badge-total').innerText = `${items.length} seriales`;
-      document.getElementById('nav-count').innerText = items.length;
-
-      const container = document.getElementById('items-container');
-      if (items.length === 0) {
-        container.innerHTML = '<p class="text-xs text-slate-600 text-center py-6">No hay seriales guardados.</p>';
-        return;
+    function eliminarItemCola(index) {
+      const cola = getColaLocal();
+      if (index >= 0 && index < cola.length) {
+        const eliminado = cola.splice(index, 1);
+        saveColaLocal(cola);
+        showToast("Eliminado de la cola", eliminado[0].serial, "warn", 1200);
       }
+    }
 
-      container.innerHTML = items.map((it, idx) => `
-        <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex justify-between items-center text-xs">
-          <div class="overflow-hidden mr-2">
-            <span class="font-mono font-bold text-emerald-400 text-sm">${it.serial}</span>
-            <p class="text-[11px] text-slate-400 truncate">${it.observacion || '<i class="text-slate-600">Sin nota</i>'}</p>
-            <span class="text-[10px] text-slate-500 font-mono">${it.fecha}</span>
+    function renderizarColaLocal() {
+      const cola = getColaLocal();
+      const badge = document.getElementById('badge-pendientes');
+      const btnSubir = document.getElementById('btn-subir');
+      const desc = document.getElementById('lote-desc');
+      const preview = document.getElementById('local-preview');
+      const btnVaciar = document.getElementById('btn-vaciar');
+
+      badge.innerText = `${cola.length} en cola`;
+      desc.innerText = `${cola.length} pendiente(s)`;
+
+      if (cola.length > 0) {
+        btnSubir.removeAttribute('disabled');
+        btnVaciar.classList.remove('hidden');
+        preview.innerHTML = cola.map((item, idx) => `
+          <div class="bg-slate-950 border border-slate-800 p-2 rounded-lg flex justify-between items-center text-xs">
+            <div class="overflow-hidden mr-2">
+              <span class="font-mono font-bold text-emerald-400">${item.serial}</span>
+              <p class="text-[11px] text-slate-400 truncate">${item.observacion || '<i class="text-slate-600">Sin nota</i>'}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="text-[10px] text-slate-500 font-mono">${(item.fechaEscaneo || '').split(' ')[1] || ''}</span>
+              <button onclick="eliminarItemCola(${idx})" class="text-slate-500 hover:text-rose-400 p-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
           </div>
-          <button onclick="eliminarItem(${idx})" class="text-slate-500 hover:text-rose-400 p-1.5 flex-shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-            </svg>
-          </button>
-        </div>
-      `).join('');
-    }
-
-    function eliminarItem(idx) {
-      const items = getDatos();
-      items.splice(idx, 1);
-      guardarDatos(items);
-      showToast("Eliminado", "warn");
-    }
-
-    function vaciarTodoConfirm() {
-      if (confirm("¿Seguro de vaciar todos los seriales escaneados?")) {
-        guardarDatos([]);
-        showToast("Lista vaciada", "warn");
+        `).reverse().join('');
+      } else {
+        btnSubir.setAttribute('disabled', 'true');
+        btnVaciar.classList.add('hidden');
+        preview.innerHTML = `<p class="text-xs text-slate-600 text-center py-4">No hay seriales en espera.</p>`;
       }
     }
 
-    // --- LÓGICA DE CAPTURA RÁPIDA ---
-    function registrarSerial(serial) {
-      const limpio = String(serial || '').trim();
-      if (!limpio) return;
-
-      const items = getDatos();
-
-      // Validación anti-duplicados instantánea
-      const existe = items.some(i => i.serial.toUpperCase() === limpio.toUpperCase());
-      if (existe) {
-        soundDuplicate();
-        if (navigator.vibrate) navigator.vibrate([70, 50, 70]);
-        showToast(`Ya existe: ${limpio}`, "warn");
-        return;
-      }
-
-      const obs = document.getElementById('obs-input').value;
-      const d = new Date();
-      const fecha = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-      // Agregar al principio de la lista
-      items.unshift({ serial: limpio, observacion: obs, fecha: fecha });
-      guardarDatos(items);
-
-      soundSuccess();
-      if (navigator.vibrate) navigator.vibrate(50);
-      showToast(`OK: ${limpio}`, "success");
-    }
-
-    function agregarManual() {
-      const input = document.getElementById('manual-input');
-      registrarSerial(input.value);
-      input.value = '';
-    }
-
-    // --- COPIAR PARA GOOGLE SHEETS (FORMATO TSV) ---
-    async function copiarParaSheets() {
-      const items = getDatos();
-      if (items.length === 0) {
-        alert("No hay seriales para copiar.");
-        return;
-      }
-
-      // Separación por tabulaciones (\t) para que Sheets cree columnas automáticamente
-      const lineas = items.map(i => `${i.serial}\t${i.observacion || ''}\t${i.fecha}`);
-      const tsvContent = `Serial\tObservación\tFecha\n` + lineas.join('\n');
-
+    // --- INICIALIZACIÓN OPTIMIZADA: SOLO SERIALES (CODE 128 / CODE 39) ---
+    async function initScanner() {
+      const loadingEl = document.getElementById('loading-cam');
+      
       try {
-        await navigator.clipboard.writeText(tsvContent);
-        showToast(`¡Copiados ${items.length} seriales!`, "success", 2500);
-        alert(`¡Copiado al portapapeles!\n\nAbre Google Sheets en tu celular o PC y simplemente dale "Pegar" (Ctrl+V). Cada dato caerá en su columna correspondiente.`);
+        // Formatos exclusivos para seriales de tecnología (Se excluye UPC y EAN intencionalmente)
+        const formatosSeriales = [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39
+        ];
+
+        html5QrCode = new Html5Qrcode("reader", {
+          formatsToSupport: formatosSeriales,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          verbose: false
+        });
+
+        // Configuración de resolución alta (Full HD) para distinguir barras finas
+        const cameraConstraints = {
+          facingMode: "environment",
+          width: { min: 1280, ideal: 1920 },
+          height: { min: 720, ideal: 1080 }
+        };
+
+        const scanConfig = { 
+          fps: 25, 
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            // Mira panorámica alargada para calzar exactamente con el serial
+            const w = Math.floor(Math.min(viewfinderWidth * 0.90, 320));
+            const h = Math.floor(Math.min(viewfinderHeight * 0.35, 100));
+            return { width: Math.max(w, 240), height: Math.max(h, 85) };
+          },
+          aspectRatio: 1.777778
+        };
+
+        try {
+          await html5QrCode.start(cameraConstraints, scanConfig, onScanSuccess);
+        } catch (camErr) {
+          // Si el celular rechaza constraints estrictos de resolución, intentar fallback estándar
+          await html5QrCode.start({ facingMode: "environment" }, scanConfig, onScanSuccess);
+        }
+
+        loadingEl.classList.add('hidden');
+        verificarCapacidadesCamara();
+
       } catch (err) {
-        // Fallback clásico si el navegador bloquea writeText
-        const ta = document.createElement('textarea');
-        ta.value = tsvContent;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast("Copiado al portapapeles", "success");
+        console.error("Error al iniciar cámara:", err);
+        loadingEl.innerHTML = `
+          <span class="text-rose-400 font-bold">Error de cámara (${err.name || 'Fallo'}):</span><br>
+          Verifica permisos o conexión HTTPS segura.
+        `;
       }
     }
 
-    // --- CÁMARA (DIRECTA SIN IFRAMES) ---
-    function onScanSuccess(decodedText) {
-      const raw = String(decodedText || '').trim();
-      if (!raw) return;
-
-      const now = Date.now();
-      // Antirrebote de 2.5 seg si enfoca el mismo código fijo
-      if (raw === lastCode && (now - lastTime) < 2500) return;
-
-      if (isProcessing) return;
-      isProcessing = true;
-      lastCode = raw;
-      lastTime = now;
-
-      registrarSerial(raw);
-
-      // Desbloqueo ultra rápido para seguir escaneando el siguiente
-      setTimeout(() => { isProcessing = false; }, 250);
-    }
-
-    function initCamera() {
-      html5QrCode = new Html5Qrcode("reader");
-      const config = { fps: 22, qrbox: { width: 280, height: 110 }, aspectRatio: 1.6 };
-
-      // Como ya no hay iframes de Google, facingMode 'environment' abre directo la cámara trasera
-      html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
-        .then(() => {
-          document.getElementById('loading-cam').classList.add('hidden');
-          verificarTorch();
-        })
-        .catch(err => {
-          // Fallback si es laptop/PC sin cámara trasera
-          Html5Qrcode.getCameras().then(cams => {
-            if (cams && cams.length) {
-              html5QrCode.start(cams[cams.length - 1].id, config, onScanSuccess)
-                .then(() => document.getElementById('loading-cam').classList.add('hidden'));
-            } else {
-              document.getElementById('loading-cam').innerText = "No se detectó cámara.";
-            }
-          }).catch(e => {
-            document.getElementById('loading-cam').innerText = "Permiso de cámara denegado. Asegúrate de abrir con HTTPS.";
-          });
-        });
-    }
-
-    function verificarTorch() {
+    // --- CONTROL DE FLASH Y ZOOM ---
+    function verificarCapacidadesCamara() {
       try {
         const track = html5QrCode.getRunningTrackCameraCapabilities();
-        if (track && track.torchFeature().isSupported()) {
+        // Linterna
+        if (track && track.torchFeature && track.torchFeature().isSupported()) {
           document.getElementById('btn-torch').classList.remove('hidden');
+        }
+        // Zoom
+        if (track && track.zoomFeature && track.zoomFeature().isSupported()) {
+          const maxZ = track.zoomFeature().max();
+          if (maxZ >= 2) {
+            document.getElementById('zoom-controls').classList.remove('hidden');
+          }
         }
       } catch (e) {}
     }
 
-    function toggleTorch() {
+    function toggleFlash() {
       if (!html5QrCode) return;
       isTorchOn = !isTorchOn;
-      html5QrCode.applyVideoConstraints({ advanced: [{ torch: isTorchOn }] }).catch(() => {});
+      html5QrCode.applyVideoConstraints({
+        advanced: [{ torch: isTorchOn }]
+      }).catch(() => {});
     }
 
-    // --- TOAST VISUAL ---
-    function showToast(msg, type = "success", duration = 1500) {
-      const box = document.getElementById('toast-box');
-      box.innerHTML = '';
-      const t = document.createElement('div');
-      t.className = `toast-anim px-4 py-2 rounded-xl text-xs font-bold shadow-2xl border ${
-        type === 'success' ? 'bg-slate-900 border-emerald-500/80 text-emerald-400' : 'bg-slate-900 border-amber-500/80 text-amber-400'
-      }`;
-      t.innerText = msg;
-      box.appendChild(t);
-      setTimeout(() => { box.innerHTML = ''; }, duration);
+    function aplicarZoom(factor) {
+      if (!html5QrCode) return;
+      html5QrCode.applyVideoConstraints({
+        advanced: [{ zoom: factor }]
+      }).then(() => {
+        document.getElementById('btn-zoom-1').className = factor === 1 ? "px-2 py-1 rounded bg-indigo-600 text-white font-bold" : "px-2 py-1 rounded text-slate-300 hover:text-white";
+        document.getElementById('btn-zoom-2').className = factor === 2 ? "px-2 py-1 rounded bg-indigo-600 text-white font-bold" : "px-2 py-1 rounded text-slate-300 hover:text-white";
+      }).catch(() => {});
     }
 
-    // --- PESTAÑAS ---
-    function switchNav(tab) {
-      const sScan = document.getElementById('tab-scan');
-      const sList = document.getElementById('tab-list');
-      const bScan = document.getElementById('btn-nav-scan');
-      const bList = document.getElementById('btn-nav-list');
+    // --- PROCESAMIENTO Y FILTRADO DEL SERIAL LEÍDO ---
+    function limpiarSerial(rawText) {
+      if (!rawText) return '';
+      let str = String(rawText).replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+      
+      // Eliminar posibles prefijos impresos tipo "S/N ", "S/N:", "SN:", "SERIAL:"
+      str = str.replace(/^(S\/N|SN|SERIAL)[\s:\-\]]*/i, '');
+      // Eliminar corchetes o símbolos alrededor: [ 9CP3151BM2 ] -> 9CP3151BM2
+      str = str.replace(/^[\[\(\{]+|[\]\)\}]+$/g, '').trim();
+      
+      return str;
+    }
 
-      if (tab === 'scan') {
-        sScan.classList.remove('hidden');
-        sList.classList.add('hidden');
-        bScan.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        bList.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
-      } else {
-        sScan.classList.add('hidden');
-        sList.classList.remove('hidden');
-        bList.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        bScan.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
+    function onScanSuccess(decodedText) {
+      const serial = limpiarSerial(decodedText);
+      if (!serial) return;
+
+      // FILTRO EXTRA DE SEGURIDAD:
+      // Si por alguna razón extraña leyese 12 dígitos exactamente numéricos (formato del UPC), descartarlo
+      if (/^\d{12}$/.test(serial)) {
+        showToast("Código comercial ignorado", "Apunta al serial S/N de la izquierda", "warn", 1400);
+        return;
+      }
+
+      const now = Date.now();
+
+      // Antirrebote: si enfoca el mismo código durante menos de 2.5s, ignorar silenciosamente
+      if (serial === lastScannedText && (now - lastScannedTime) < 2500) return;
+
+      if (isProcessing) return;
+      isProcessing = true;
+
+      lastScannedText = serial;
+      lastScannedTime = now;
+
+      const cola = getColaLocal();
+
+      // Validar si ya está en la cola local
+      const duplicado = cola.some(item => item.serial.toUpperCase() === serial.toUpperCase());
+      if (duplicado) {
+        soundDuplicate();
+        if (navigator.vibrate) navigator.vibrate([70, 50, 70]);
+        showToast("Serial ya en cola", serial, "warn", 1400);
+        setTimeout(() => { isProcessing = false; }, 200);
+        return;
+      }
+
+      // Inserción en memoria local
+      const obs = document.getElementById('obs-input').value;
+      const d = new Date();
+      const fechaLocal = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0') + ':' +
+        String(d.getSeconds()).padStart(2, '0');
+
+      cola.push({
+        serial: serial,
+        observacion: obs,
+        operador: operarioNombre,
+        fechaEscaneo: fechaLocal
+      });
+
+      saveColaLocal(cola);
+      soundSuccess();
+      if (navigator.vibrate) navigator.vibrate(50);
+      showToast("Serial registrado", serial, "success", 1600);
+
+      // Desbloqueo ultra rápido para el siguiente equipo
+      setTimeout(() => { isProcessing = false; }, 200);
+    }
+
+    // --- SINCRONIZAR CON GOOGLE SHEETS ---
+    function enviarLote() {
+      const cola = getColaLocal();
+      if (cola.length === 0) return;
+
+      if (!navigator.onLine) {
+        showToast("Sin internet", "Espera cobertura para subir", "error", 2200);
+        return;
+      }
+
+      const btnSubir = document.getElementById('btn-subir');
+      btnSubir.setAttribute('disabled', 'true');
+      btnSubir.innerText = 'Subiendo...';
+      showToast("Sincronizando...", `${cola.length} seriales al servidor`, "info", 2000);
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btnSubir.innerText = 'Sincronizar Lote';
+          if (res.status === 'success') {
+            saveColaLocal([]);
+            let detalle = `${res.insertados} agregados a Sheets`;
+            if (res.duplicados > 0) detalle += ` (${res.duplicados} ya existían)`;
+            showToast("Sincronización exitosa", detalle, "success", 3000);
+          } else {
+            btnSubir.removeAttribute('disabled');
+            showToast("Error en servidor", res.message || "No se pudo subir", "error", 3000);
+          }
+        })
+        .withFailureHandler(err => {
+          btnSubir.removeAttribute('disabled');
+          btnSubir.innerText = 'Sincronizar Lote';
+          showToast("Error de red", err.message, "error", 3000);
+        })
+        .sincronizarLote(cola);
+    }
+
+    function limpiarColaConfirm() {
+      if (confirm("¿Vaciar todos los seriales pendientes de este teléfono?")) {
+        saveColaLocal([]);
+        showToast("Cola vaciada", "", "warn", 1400);
       }
     }
 
-    // Persistencia observación
+    // --- PESTAÑAS ---
+    function switchTab(tab) {
+      const vScan = document.getElementById('view-scan');
+      const vRec = document.getElementById('view-records');
+      const bScan = document.getElementById('tab-scan-btn');
+      const bRec = document.getElementById('tab-records-btn');
+
+      if (tab === 'scan') {
+        vScan.classList.remove('hidden');
+        vRec.classList.add('hidden');
+        bScan.classList.add('text-indigo-400', 'font-bold');
+        bScan.classList.remove('text-slate-400');
+        bRec.classList.remove('text-indigo-400', 'font-bold');
+        bRec.classList.add('text-slate-400');
+      } else {
+        vScan.classList.add('hidden');
+        vRec.classList.remove('hidden');
+        bRec.classList.add('text-indigo-400', 'font-bold');
+        bRec.classList.remove('text-slate-400');
+        bScan.classList.remove('text-indigo-400', 'font-bold');
+        bScan.classList.add('text-slate-400');
+        cargarRegistrosHoja();
+      }
+    }
+
+    let debounceBusqueda = null;
+    function filtrarRegistrosEnNube() {
+      clearTimeout(debounceBusqueda);
+      debounceBusqueda = setTimeout(() => {
+        const q = document.getElementById('search-input').value;
+        cargarRegistrosHoja(q);
+      }, 400);
+    }
+
+    function cargarRegistrosHoja(filtro = '') {
+      const container = document.getElementById('cloud-records-list');
+      container.innerHTML = `<p class="text-xs text-slate-500 text-center py-6">Consultando Google Sheets...</p>`;
+
+      google.script.run
+        .withSuccessHandler(rows => {
+          if (!rows || rows.length === 0) {
+            container.innerHTML = `<p class="text-xs text-slate-500 text-center py-6">No hay registros coincidentes.</p>`;
+            return;
+          }
+          container.innerHTML = rows.map(r => `
+            <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex justify-between items-start text-xs">
+              <div class="space-y-0.5">
+                <span class="font-mono font-bold text-slate-200 text-sm">${r.serial}</span>
+                <p class="text-slate-400">${r.observacion || '<i class="text-slate-600">Sin nota</i>'}</p>
+                <span class="inline-block text-[10px] bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded font-mono">${r.operador}</span>
+              </div>
+              <span class="text-[10px] text-slate-500 font-mono">${(r.fechaEscaneo || '').split(' ')[1] || r.fechaEscaneo}</span>
+            </div>
+          `).join('');
+        })
+        .withFailureHandler(err => {
+          container.innerHTML = `<p class="text-xs text-rose-400 text-center py-6">Error: ${err.message}</p>`;
+        })
+        .obtenerRegistrosHoja(filtro);
+    }
+
+    function configurarOperador() {
+      let guardado = localStorage.getItem('inv_operador_pro');
+      if (!guardado) {
+        guardado = prompt("Ingresa tu nombre o código de operario:") || ('Op-' + Math.floor(100 + Math.random() * 900));
+        localStorage.setItem('inv_operador_pro', guardado.trim());
+      }
+      operarioNombre = guardado.trim();
+      document.getElementById('user-display').innerText = `Op: ${operarioNombre}`;
+    }
+
+    function cambiarOperador() {
+      const nuevo = prompt("Cambiar nombre o código de operario:", operarioNombre);
+      if (nuevo && nuevo.trim()) {
+        operarioNombre = nuevo.trim();
+        localStorage.setItem('inv_operador_pro', operarioNombre);
+        document.getElementById('user-display').innerText = `Op: ${operarioNombre}`;
+      }
+    }
+
     document.getElementById('obs-input').addEventListener('input', e => {
-      localStorage.setItem('inv_html_obs', e.target.value);
+      localStorage.setItem('inv_obs_pro', e.target.value);
     });
 
     window.addEventListener('DOMContentLoaded', () => {
-      const savedObs = localStorage.getItem('inv_html_obs');
+      configurarOperador();
+      updateNetworkStatus();
+      const savedObs = localStorage.getItem('inv_obs_pro');
       if (savedObs) document.getElementById('obs-input').value = savedObs;
-      renderizarLista();
-      initCamera();
+      renderizarColaLocal();
+      initScanner();
     });
   </script>
 </body>

@@ -4,16 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Lector de Seriales - Inventario TI</title>
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Html5-Qrcode (Motor Base) -->
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <!-- Quagga2 CDN: Localizador geométrico de códigos rotados/deformados -->
   <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
-
   <style>
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
-    #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 220px; }
+    #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 240px; }
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
@@ -40,7 +36,7 @@
   <!-- Barra Superior -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
-      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI V0.1</h1>
+      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
       <p class="text-[11px] text-emerald-400 font-semibold" id="header-mode-desc">Modo Continuo (Code 128/39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
@@ -53,8 +49,6 @@
     
     <!-- SECCIÓN CÁMARA GLOBAL -->
     <div id="camera-global-wrapper" class="space-y-2">
-      
-      <!-- Observación Fija -->
       <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-sm">
         <label for="obs-input" class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
           Observación fija (Ubicación / Lote)
@@ -67,7 +61,6 @@
         />
       </div>
 
-      <!-- Visor de Cámara en Vivo -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[170px] flex items-center justify-center">
         <div id="reader"></div>
         <div id="laser-line" class="laser-line hidden"></div>
@@ -75,12 +68,11 @@
         <div id="cam-status" class="p-6 text-center text-xs space-y-3 z-20">
           <p id="cam-msg" class="text-slate-400 leading-relaxed">Iniciando cámara trasera...</p>
           <button id="btn-permiso" onclick="iniciarCamaraDirecta()" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-lg active:scale-95 transition-all">
-            📷 Tocar aquí para Conceder Permiso
+            📷 Conceder Permiso de Cámara
           </button>
         </div>
       </div>
 
-      <!-- Controles de Cámara (Zoom y Linterna) -->
       <div class="flex items-center justify-between bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
         <div id="zoom-container" class="hidden flex items-center gap-1">
           <span class="text-[10px] font-bold text-slate-400 mr-1 uppercase">Zoom:</span>
@@ -93,18 +85,14 @@
           <span>🔦</span> Linterna
         </button>
       </div>
-
     </div>
 
     <!-- PESTAÑA 1: MODO CONTINUO -->
     <section id="panel-scan" class="space-y-2.5">
       <button 
         onclick="copiarParaSheets()" 
-        class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
-        </svg>
         <span>📋 Copiar Lista para Sheets / Excel</span>
       </button>
 
@@ -122,77 +110,87 @@
       </div>
     </section>
 
-    <!-- PESTAÑA 2: FOTO MULTI-SCAN (PERSPECTIVA CORREGIDA + MICROVISOR) -->
+    <!-- PESTAÑA 2: FOTO MULTI-SCAN (AMPLIO, RECORTADO Y DINÁMICO) -->
     <section id="panel-photo" class="hidden space-y-3">
       
-      <!-- Disparo en Vivo -->
+      <!-- Botón de Congelar Imagen -->
       <div id="controls-capture-live" class="space-y-2">
         <button 
           onclick="congelarYEnmarcar()" 
-          class="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
+          class="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg flex items-center justify-center gap-2"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
           </svg>
-          <span>📸 Congelar, Nivelar y Enmarcar</span>
+          <span>📸 Congelar y Enmarcar Lote</span>
         </button>
-        <p class="text-[11px] text-center text-slate-500">Corrige inclinación de la caja y aclara códigos diminutos.</p>
+        <p class="text-[11px] text-center text-slate-500">Detecta múltiples códigos 128/39 y recorta el área útil.</p>
       </div>
 
-      <!-- Tarjeta Interactiva con Foto y Marcos -->
-      <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-3">
+      <!-- Tarjeta Amplia de Inspección -->
+      <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-3">
         <div class="flex justify-between items-center px-1">
-          <span class="text-xs font-bold text-slate-200">Etiqueta Enmarcada</span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-200">Visor de Lote</span>
+            <button id="btn-toggle-crop" onclick="alternarRecorte()" class="text-[10px] bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-2 py-0.5 rounded hover:bg-indigo-800">
+              ✂️ Vista: Recortada
+            </button>
+          </div>
           <button onclick="reanudarCamaraEnVivo()" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
             <span>🔄</span> Repetir foto
           </button>
         </div>
 
-        <div class="relative overflow-hidden rounded-lg border border-slate-700 bg-black flex justify-center items-center">
-          <canvas id="photo-canvas" class="max-w-full h-auto cursor-pointer block"></canvas>
+        <!-- Canvas Amplio sin recortes restrictivos de altura -->
+        <div class="relative overflow-hidden rounded-xl border border-slate-700 bg-black flex justify-center items-center">
+          <canvas id="photo-canvas" class="w-full max-h-[60vh] object-contain cursor-crosshair block touch-manipulation"></canvas>
           <div id="photo-loading-overlay" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-xs text-emerald-400 gap-2">
             <svg class="animate-spin h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            <span id="loading-step-text">Procesando perspectiva y bordes...</span>
+            <span id="loading-step-text">Buscando códigos 128 y 39...</span>
           </div>
         </div>
 
-        <!-- MICROVISOR DE DIAGNÓSTICO -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2 space-y-1.5">
+        <p class="text-[11px] text-slate-400 text-center">
+          💡 <b class="text-slate-300">Toca un recuadro</b> para quitarlo/marcarlo. <b class="text-slate-300">Toca un código o QR no detectado</b> para forzar su escaneo.
+        </p>
+
+        <!-- MICROVISOR CON BOTÓN DE PANTALLA COMPLETA -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
-              <span>🔬</span> Microvisor: Imagen Binarizada / Deskew
+              <span>🔬</span> Microvisor: Imagen Binarizada
             </span>
-            <span id="micro-status" class="text-[9px] text-emerald-400 font-mono">Nivelando...</span>
+            <button onclick="abrirModalMicrovisor()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-indigo-300 px-2 py-0.5 rounded border border-slate-700">
+              🔍 Ampliar Pantalla Completa
+            </button>
           </div>
-          <div class="overflow-x-auto overflow-y-hidden rounded border border-slate-800 bg-black flex justify-center p-1">
-            <canvas id="micro-canvas" class="h-20 w-auto object-contain block"></canvas>
+          <div class="overflow-x-auto rounded border border-slate-800 bg-black flex justify-center p-1">
+            <canvas id="micro-canvas" class="h-20 w-auto object-contain block cursor-pointer" onclick="abrirModalMicrovisor()"></canvas>
           </div>
-          <p class="text-[10px] text-slate-500">Muestra el contraste real que procesa el motor (barras negras puras y niveladas).</p>
-        </div>
-
-        <div class="flex items-center justify-between px-1 text-[11px]">
-          <span class="text-slate-400">Toca el recuadro para marcar/desmarcar:</span>
-          <button onclick="marcarTodos(true)" class="text-indigo-400 hover:underline">Marcar todos</button>
+          <div class="flex justify-between items-center text-[9px] text-slate-500">
+            <span id="micro-status">Deskew: 0° | Binarizado Otsu</span>
+            <span>Toca para ver píxeles completos</span>
+          </div>
         </div>
 
         <!-- Lista de Códigos Detectados -->
-        <div id="detected-checkboxes-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1"></div>
+        <div id="detected-checkboxes-list" class="space-y-1.5 max-h-40 overflow-y-auto pr-1"></div>
 
         <!-- Confirmar Lote -->
         <button 
           id="btn-confirmar-lote" 
           onclick="importarCodigosSeleccionados()" 
           disabled
-          class="w-full bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2"
+          class="w-full bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>
-          <span id="btn-confirm-text">Registrar Códigos</span>
+          <span id="btn-confirm-text">Registrar 0 Códigos Seleccionados</span>
         </button>
       </div>
 
@@ -210,6 +208,22 @@
     </section>
 
   </main>
+
+  <!-- MODAL PARA VER EL MICROVISOR EN PANTALLA COMPLETA -->
+  <div id="modal-microvisor" class="hidden fixed inset-0 z-50 bg-black/95 backdrop-blur-md p-4 flex flex-col">
+    <div class="flex justify-between items-center pb-2 border-b border-slate-800">
+      <div>
+        <h3 class="text-sm font-bold text-white">Inspección de Binarización y Perspectiva</h3>
+        <p class="text-[11px] text-slate-400" id="modal-micro-info">Píxeles que procesa el motor decodificador</p>
+      </div>
+      <button onclick="cerrarModalMicrovisor()" class="bg-slate-800 text-white px-3 py-1 rounded-lg text-xs font-bold">
+        ✕ Cerrar
+      </button>
+    </div>
+    <div class="flex-1 overflow-auto flex items-center justify-center p-2">
+      <canvas id="modal-micro-canvas" class="max-w-none max-h-none border border-slate-700"></canvas>
+    </div>
+  </div>
 
   <!-- NAVEGACIÓN INFERIOR -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
@@ -243,8 +257,12 @@
     let lastTime = 0;
     let currentTab = 'scan';
 
-    let imagenActual = null;
+    // Estados de imagen y recorte ROI
+    let imagenOriginal = null;
+    let canvasProcesadoGlobal = null;
     let codigosDetectados = [];
+    let vistaRecortada = true;
+    let roiRecorte = { x: 0, y: 0, w: 0, h: 0 };
 
     // --- AUDIO SINTETIZADO ---
     let audioCtx = null;
@@ -339,6 +357,7 @@
       const limpio = limpiarSerial(serialBruto);
       if (!limpio) return false;
 
+      // Ignorar UPC de 12 dígitos en registro estándar
       if (/^\d{12}$/.test(limpio)) {
         if (!silencio) showToast("UPC comercial ignorado", "warn", 1200);
         return false;
@@ -404,7 +423,6 @@
     // --- CÁMARA EN VIVO ---
     function onScanSuccess(decodedText) {
       if (currentTab === 'photo') return;
-
       const raw = String(decodedText || '').trim();
       if (!raw) return;
 
@@ -450,34 +468,15 @@
           }
         };
 
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          scanConfig,
-          onScanSuccess
-        );
-
+        await html5QrCode.start({ facingMode: "environment" }, scanConfig, onScanSuccess);
         statusBox.classList.add('hidden');
         if (currentTab === 'scan') laserLine.classList.remove('hidden');
         verificarCapacidadesCamara();
-
       } catch (err) {
         console.error("Error cámara:", err);
         laserLine.classList.add('hidden');
         btnPermiso.classList.remove('hidden');
-
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          msgEl.innerHTML = `
-            <span class="text-rose-400 font-bold text-sm block mb-1">Permiso Denegado</span>
-            1. Toca el candado 🔒 junto a la URL.<br>
-            2. Cambia Cámara a Permitir.<br>
-            3. Luego toca el botón de abajo:
-          `;
-        } else {
-          msgEl.innerHTML = `
-            <span class="text-amber-400 font-bold block mb-1">No se pudo abrir la cámara</span>
-            Si abriste desde WhatsApp, toca los 3 puntos arriba y elige "Abrir en Chrome".
-          `;
-        }
+        msgEl.innerHTML = `<span class="text-amber-400 font-bold block mb-1">Permiso denegado o no disponible</span>Toca el botón para conceder permiso.`;
       }
     }
 
@@ -512,12 +511,9 @@
     }
 
     // =========================================================================
-    // --- MOTOR DE PREPROCESAMIENTO Y CORRECCIÓN DE PERSPECTIVA (DESKEW) ---
+    // --- PIPELINE DE IMAGEN (DESKEW + BINARIZACIÓN OTSU + FILTRO MORFOLÓGICO) ---
     // =========================================================================
 
-    /**
-     * Calcula la inclinación geométrica mediante análisis de gradientes cruzados
-     */
     function estimarAnguloInclinacion(gray, width, height) {
       const stepY = Math.floor(height / 6);
       let bestAngle = 0;
@@ -532,7 +528,6 @@
           const cy = yIndex * stepY;
           let prevVal = 0;
           let diffSum = 0;
-
           for (let x = 15; x < width - 15; x += 3) {
             const shiftY = Math.round(cy + (x - width / 2) * tan);
             if (shiftY >= 0 && shiftY < height) {
@@ -552,9 +547,6 @@
       return bestAngle;
     }
 
-    /**
-     * Pipeline de visión: Rotación afín + Convolución + Binarización Otsu local + Relleno 1D
-     */
     function preprocesarCanvasConCorreccion(srcCanvas) {
       const w = srcCanvas.width;
       const h = srcCanvas.height;
@@ -571,10 +563,8 @@
         grayInit[j] = (rawData[i] * 77 + rawData[i + 1] * 150 + rawData[i + 2] * 29) >> 8;
       }
 
-      // Estimar inclinación de perspectiva
       const angle = estimarAnguloInclinacion(grayInit, w, h);
 
-      // Canvas rotado y rectificado
       const rectCanvas = document.createElement('canvas');
       rectCanvas.width = w;
       rectCanvas.height = h;
@@ -582,10 +572,7 @@
 
       rectCtx.save();
       rectCtx.translate(w / 2, h / 2);
-      if (Math.abs(angle) >= 2) {
-        rectCtx.rotate((-angle * Math.PI) / 180);
-      }
-      // Compensación de aspect-ratio trapezoidal
+      if (Math.abs(angle) >= 2) rectCtx.rotate((-angle * Math.PI) / 180);
       rectCtx.scale(1.05, 1.0);
       rectCtx.drawImage(srcCanvas, -w / 2, -h / 2);
       rectCtx.restore();
@@ -598,19 +585,17 @@
         gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
       }
 
-      // Convolución 3x3 (Unsharp mask para separar barras pegadas)
+      // Enfoque 3x3
       const sharpened = new Uint8Array(w * h);
       for (let y = 1; y < h - 1; y++) {
-        const rowP = (y - 1) * w;
-        const rowC = y * w;
-        const rowN = (y + 1) * w;
+        const rowP = (y - 1) * w, rowC = y * w, rowN = (y + 1) * w;
         for (let x = 1; x < w - 1; x++) {
           const val = 5 * gray[rowC + x] - gray[rowP + x] - gray[rowN + x] - gray[rowC + x - 1] - gray[rowC + x + 1];
           sharpened[rowC + x] = val < 0 ? 0 : (val > 255 ? 255 : val);
         }
       }
 
-      // Umbral adaptativo local por Integral Image
+      // Binarización Adaptativa Integral
       const S = Math.max(16, Math.floor(w / 18));
       const T = 0.12;
       const binary = new Uint8Array(w * h);
@@ -627,27 +612,20 @@
 
       const s2 = S >> 1;
       for (let y = 0; y < h; y++) {
-        const y1 = Math.max(0, y - s2);
-        const y2 = Math.min(h - 1, y + s2);
-        const row = y * w;
+        const y1 = Math.max(0, y - s2), y2 = Math.min(h - 1, y + s2), row = y * w;
         for (let x = 0; x < w; x++) {
-          const x1 = Math.max(0, x - s2);
-          const x2 = Math.min(w - 1, x + s2);
+          const x1 = Math.max(0, x - s2), x2 = Math.min(w - 1, x + s2);
           const count = (x2 - x1 + 1) * (y2 - y1 + 1);
           const sum = integral[y2 * w + x2] - integral[y1 * w + x2] - integral[y2 * w + x1] + integral[y1 * w + x1];
-
           binary[row + x] = (sharpened[row + x] * count <= sum * (1 - T)) ? 0 : 255;
         }
       }
 
-      // Reparación morfológica vertical (Cierre 1D sin ensanchar grosor)
+      // Cierre morfológico vertical 1D
       const repaired = new Uint8Array(w * h);
       repaired.set(binary);
-
       for (let y = 1; y < h - 1; y++) {
-        const rowP = (y - 1) * w;
-        const rowC = y * w;
-        const rowN = (y + 1) * w;
+        const rowP = (y - 1) * w, rowC = y * w, rowN = (y + 1) * w;
         for (let x = 0; x < w; x++) {
           if (binary[rowC + x] === 255 && binary[rowP + x] === 0 && binary[rowN + x] === 0) {
             repaired[rowC + x] = 0;
@@ -668,13 +646,13 @@
     }
 
     // =========================================================================
-    // --- FOTO MULTI-SCAN (QUAGGA2 LOCATOR + BARCODEDETECTOR HÍBRIDO) ---
+    // --- ESCANEO MÚLTIPLE COMPLETO (MULTI-SLICE SCANNER PARA CODE 128 / 39) ---
     // =========================================================================
 
     function congelarYEnmarcar() {
       const videoEl = document.querySelector("#reader video");
       if (!videoEl || videoEl.videoWidth === 0) {
-        showToast("Esperando imagen de la cámara...", "warn");
+        showToast("Inicia la cámara primero", "warn");
         return;
       }
 
@@ -690,7 +668,7 @@
     }
 
     async function procesarImagenParaMultiScan(img) {
-      imagenActual = img;
+      imagenOriginal = img;
       
       document.getElementById('controls-capture-live').classList.add('hidden');
       document.getElementById('photo-preview-card').classList.remove('hidden');
@@ -709,194 +687,225 @@
         const rawCtx = rawCanvas.getContext("2d");
         rawCtx.drawImage(img, 0, 0);
 
-        // Capa de visión por computadora
         const resultado = preprocesarCanvasConCorreccion(rawCanvas);
-        const processedCanvas = resultado.canvasProcesado;
+        canvasProcesadoGlobal = resultado.canvasProcesado;
         const angulo = resultado.anguloDetectado;
 
-        actualizarMicrovisor(processedCanvas, angulo);
+        actualizarMicrovisor(canvasProcesadoGlobal, angulo);
 
-        stepText.innerText = "Localizando y decodificando códigos...";
+        stepText.innerText = "Buscando TODOS los códigos 128 y 39...";
 
         const detectadosMap = new Map();
 
-        // MOTOR 1: BarcodeDetector Nativo de Chrome / Android
+        // 1. ESCANEO POR FRANJAS CON BARCODEDETECTOR
         if ('BarcodeDetector' in window) {
-          const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'upc_a', 'ean_13'] });
+          const detector = new BarcodeDetector({ formats: ['code_128', 'code_39'] });
 
-          // Probar sobre imagen binarizada rectificada
-          let barcodes = await detector.detect(processedCanvas);
-          if (!barcodes || barcodes.length === 0) {
-            barcodes = await detector.detect(rawCanvas);
+          async function scanRegion(targetCanvas, offsetX = 0, offsetY = 0) {
+            try {
+              const res = await detector.detect(targetCanvas);
+              for (const b of res) {
+                const limpio = limpiarSerial(b.rawValue);
+                if (!limpio) continue;
+                // Excluir código UPC de 12 dígitos
+                if (/^\d{12}$/.test(limpio)) continue;
+
+                const box = {
+                  x: Math.round(b.boundingBox.x + offsetX),
+                  y: Math.round(b.boundingBox.y + offsetY),
+                  w: Math.round(b.boundingBox.width),
+                  h: Math.round(b.boundingBox.height)
+                };
+
+                const key = `${limpio}_${Math.round(box.x / 30)}_${Math.round(box.y / 30)}`;
+                if (!detectadosMap.has(key)) {
+                  detectadosMap.set(key, {
+                    id: detectadosMap.size,
+                    raw: b.rawValue,
+                    serial: limpio,
+                    format: b.format,
+                    box: box,
+                    selected: true
+                  });
+                }
+              }
+            } catch (e) {}
           }
 
-          if (barcodes && barcodes.length > 0) {
-            barcodes.forEach((b) => {
-              const limpio = limpiarSerial(b.rawValue);
-              if (!limpio) return;
-              const esUPC = /^\d{12}$/.test(limpio) || b.format === 'upc_a';
-              const key = `${limpio}_${Math.round(b.boundingBox.x / 35)}`;
+          // Escanear completo binarizado y original
+          await scanRegion(canvasProcesadoGlobal);
+          await scanRegion(rawCanvas);
 
-              if (!detectadosMap.has(key)) {
-                detectadosMap.set(key, {
-                  id: detectadosMap.size,
-                  raw: b.rawValue,
-                  serial: limpio,
-                  format: b.format,
-                  box: {
-                    x: b.boundingBox.x,
-                    y: b.boundingBox.y,
-                    w: b.boundingBox.width,
-                    h: b.boundingBox.height
-                  },
-                  selected: !esUPC
-                });
-              }
-            });
+          // Escanear franjas superpuestas (crucial para capturar varios códigos pequeños contiguos)
+          const W = img.width, H = img.height;
+          const franjas = [
+            { x: 0, y: 0, w: Math.round(W * 0.55), h: H },
+            { x: Math.round(W * 0.45), y: 0, w: Math.round(W * 0.55), h: H },
+            { x: 0, y: 0, w: W, h: Math.round(H * 0.55) },
+            { x: 0, y: Math.round(H * 0.45), w: W, h: Math.round(H * 0.55) },
+            { x: Math.round(W * 0.2), y: Math.round(H * 0.2), w: Math.round(W * 0.6), h: Math.round(H * 0.6) }
+          ];
+
+          for (const f of franjas) {
+            const sub = document.createElement('canvas');
+            sub.width = f.w; sub.height = f.h;
+            sub.getContext('2d').drawImage(canvasProcesadoGlobal, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+            await scanRegion(sub, f.x, f.y);
           }
         }
 
-        // MOTOR 2 (Híbrido CDN): Quagga2 Locator (Especialista en encontrar códigos inclinados/deformados)
+        // 2. FALLBACK QUAGGA2 SI NO SE ENCONTRÓ NINGUNO
         if (detectadosMap.size === 0 && typeof Quagga !== 'undefined') {
-          try {
-            await new Promise((resolve) => {
-              Quagga.decodeSingle({
-                src: processedCanvas.toDataURL('image/jpeg', 0.9),
-                numOfWorkers: 0, // Ejecuta sincrónico en hilo UI sin trabar
-                inputStream: { size: img.width },
-                locator: { patchSize: "medium", halfSample: false },
-                decoder: { readers: ["code_128_reader", "code_39_reader"] }
-              }, function(result) {
-                if (result && result.codeResult) {
-                  const limpio = limpiarSerial(result.codeResult.code);
-                  const box = result.box || { x: img.width * 0.1, y: img.height * 0.35, w: img.width * 0.8, h: img.height * 0.3 };
+          await new Promise((resolve) => {
+            Quagga.decodeSingle({
+              src: canvasProcesadoGlobal.toDataURL('image/jpeg', 0.95),
+              numOfWorkers: 0,
+              inputStream: { size: img.width },
+              locator: { patchSize: "large", halfSample: false },
+              decoder: { readers: ["code_128_reader", "code_39_reader"] }
+            }, function(result) {
+              if (result && result.codeResult) {
+                const limpio = limpiarSerial(result.codeResult.code);
+                if (limpio && !/^\d{12}$/.test(limpio)) {
                   detectadosMap.set(limpio, {
                     id: 0,
                     raw: result.codeResult.code,
                     serial: limpio,
                     format: result.codeResult.format,
-                    box: {
-                      x: box.x || (img.width * 0.1),
-                      y: box.y || (img.height * 0.35),
-                      w: box.w || (img.width * 0.7),
-                      h: box.h || (img.height * 0.25)
-                    },
+                    box: { x: Math.round(img.width * 0.1), y: Math.round(img.height * 0.35), w: Math.round(img.width * 0.7), h: Math.round(img.height * 0.25) },
                     selected: true
                   });
                 }
-                resolve();
-              });
+              }
+              resolve();
             });
-          } catch (qErr) {
-            console.warn("Quagga single pass:", qErr);
-          }
-        }
-
-        // MOTOR 3 (Fallback General Html5Qrcode scanFile)
-        if (detectadosMap.size === 0 && html5QrCode) {
-          try {
-            const tempFile = dataURLtoFile(processedCanvas.toDataURL('image/jpeg', 1.0), "proc.jpg");
-            const res = await html5QrCode.scanFile(tempFile, false);
-            const limpio = limpiarSerial(res);
-            detectadosMap.set(limpio, {
-              id: 0,
-              raw: res,
-              serial: limpio,
-              format: 'CODE_128',
-              box: { x: img.width * 0.1, y: img.height * 0.35, w: img.width * 0.8, h: img.height * 0.3 },
-              selected: true
-            });
-          } catch (e) {}
+          });
         }
 
         codigosDetectados = Array.from(detectadosMap.values());
 
+        // Calcular región útil con códigos para auto-recorte (ROI)
+        calcularRegionRecorte();
+
       } catch (err) {
-        console.error("Fallo durante el análisis:", err);
+        console.error("Error multi-scan:", err);
       } finally {
         overlay.classList.add('hidden');
+        vistaRecortada = codigosDetectados.length > 0;
+        actualizarBotonRecorte();
         redibujarCanvasFoto();
         renderizarListaCodigosDetectados();
 
         if (codigosDetectados.length === 0) {
-          showToast("No se detectó código nítido. Revisa el microvisor", "warn", 2500);
+          showToast("No se detectaron códigos 128/39. Toca sobre el código para forzar lectura", "warn", 3000);
         } else {
-          showToast(`${codigosDetectados.length} código(s) detectado(s)`, "success", 1500);
+          showToast(`¡${codigosDetectados.length} código(s) encontrado(s)!`, "success", 1800);
         }
       }
     }
 
-    function actualizarMicrovisor(canvasProc, angulo) {
-      const microCanvas = document.getElementById('micro-canvas');
-      const microStatus = document.getElementById('micro-status');
-      const ctx = microCanvas.getContext('2d');
+    // =========================================================================
+    // --- AUTO-RECORTE AL ÁREA CON CÓDIGOS (ROI) ---
+    // =========================================================================
 
-      microCanvas.width = canvasProc.width;
-      microCanvas.height = canvasProc.height;
-      ctx.drawImage(canvasProc, 0, 0);
+    function calcularRegionRecorte() {
+      if (codigosDetectados.length === 0 || !imagenOriginal) {
+        roiRecorte = { x: 0, y: 0, w: imagenOriginal ? imagenOriginal.width : 0, h: imagenOriginal ? imagenOriginal.height : 0 };
+        return;
+      }
 
-      microStatus.innerText = `Deskew: ${angulo !== 0 ? (angulo > 0 ? `+${angulo}°` : `${angulo}°`) : '0° (Nivelado)'} | Binarizado 1D`;
+      let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+      codigosDetectados.forEach(c => {
+        minX = Math.min(minX, c.box.x);
+        minY = Math.min(minY, c.box.y);
+        maxX = Math.max(maxX, c.box.x + c.box.w);
+        maxY = Math.max(maxY, c.box.y + c.box.h);
+      });
+
+      // Margen amplio del 25% para contexto visual
+      const padX = Math.max(40, (maxX - minX) * 0.25);
+      const padY = Math.max(40, (maxY - minY) * 0.35);
+
+      const rx = Math.max(0, Math.floor(minX - padX));
+      const ry = Math.max(0, Math.floor(minY - padY));
+      const rw = Math.min(imagenOriginal.width - rx, Math.ceil((maxX - minX) + padX * 2));
+      const rh = Math.min(imagenOriginal.height - ry, Math.ceil((maxY - minY) + padY * 2));
+
+      roiRecorte = { x: rx, y: ry, w: rw, h: rh };
     }
 
-    function reanudarCamaraEnVivo() {
-      imagenActual = null;
-      codigosDetectados = [];
-      document.getElementById('photo-preview-card').classList.add('hidden');
-      document.getElementById('controls-capture-live').classList.remove('hidden');
+    function alternarRecorte() {
+      vistaRecortada = !vistaRecortada;
+      actualizarBotonRecorte();
+      redibujarCanvasFoto();
     }
 
-    function dataURLtoFile(dataurl, filename) {
-      const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
-            bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while(n--) u8arr[n] = bstr.charCodeAt(n);
-      return new File([u8arr], filename, {type:mime});
+    function actualizarBotonRecorte() {
+      const btn = document.getElementById('btn-toggle-crop');
+      btn.innerText = vistaRecortada ? "✂️ Vista: Recortada a Códigos" : "🌐 Vista: Completa";
     }
+
+    // =========================================================================
+    // --- DIBUJADO DINÁMICO EN CANVAS Y SOPORTE TOUCH TÁCTIL ---
+    // =========================================================================
 
     function redibujarCanvasFoto() {
-      if (!imagenActual) return;
+      if (!imagenOriginal) return;
       const canvas = document.getElementById('photo-canvas');
       const ctx = canvas.getContext('2d');
 
-      canvas.width = imagenActual.width;
-      canvas.height = imagenActual.height;
+      const origenX = (vistaRecortada && roiRecorte.w > 0) ? roiRecorte.x : 0;
+      const origenY = (vistaRecortada && roiRecorte.h > 0) ? roiRecorte.y : 0;
+      const ancho = (vistaRecortada && roiRecorte.w > 0) ? roiRecorte.w : imagenOriginal.width;
+      const alto = (vistaRecortada && roiRecorte.h > 0) ? roiRecorte.h : imagenOriginal.height;
 
-      ctx.drawImage(imagenActual, 0, 0);
+      canvas.width = ancho;
+      canvas.height = alto;
 
+      // Dibujar porción visible
+      ctx.drawImage(imagenOriginal, origenX, origenY, ancho, alto, 0, 0, ancho, alto);
+
+      // Dibujar todos los recuadros
       codigosDetectados.forEach((item) => {
-        const { x, y, w, h } = item.box;
+        // Coordenadas relativas a la vista actual
+        const rx = item.box.x - origenX;
+        const ry = item.box.y - origenY;
+        const rw = item.box.w;
+        const rh = item.box.h;
+
         ctx.save();
-        ctx.lineWidth = Math.max(4, Math.floor(canvas.width * 0.007));
+        ctx.lineWidth = Math.max(4, Math.floor(canvas.width * 0.008));
 
         if (item.selected) {
+          // Verde: Marcado para importar
           ctx.strokeStyle = '#10b981';
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.28)';
         } else {
+          // Gris: Desmarcado
           ctx.strokeStyle = '#64748b';
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.5)';
         }
 
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeRect(x, y, w, h);
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeRect(rx, ry, rw, rh);
 
-        const fontSize = Math.max(14, Math.floor(canvas.width * 0.025));
+        const fontSize = Math.max(13, Math.floor(canvas.width * 0.028));
         ctx.font = `bold ${fontSize}px monospace`;
         const label = `${item.selected ? '✓ ' : '✕ '}${item.serial}`;
         const textWidth = ctx.measureText(label).width;
 
         ctx.fillStyle = item.selected ? '#10b981' : '#475569';
-        ctx.fillRect(x, Math.max(0, y - fontSize - 8), textWidth + 12, fontSize + 8);
+        ctx.fillRect(rx, Math.max(0, ry - fontSize - 6), textWidth + 10, fontSize + 6);
 
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, x + 6, Math.max(fontSize, y - 6));
-
+        ctx.fillText(label, rx + 5, Math.max(fontSize, ry - 4));
         ctx.restore();
       });
     }
 
-    document.getElementById('photo-canvas').addEventListener('click', (e) => {
-      if (!imagenActual || codigosDetectados.length === 0) return;
+    // TOQUE DINÁMICO: Tocar caja existente para desmarcar/eliminar O tocar punto vacío para detectar nuevo
+    document.getElementById('photo-canvas').addEventListener('click', async (e) => {
+      if (!imagenOriginal) return;
       const canvas = document.getElementById('photo-canvas');
       const rect = canvas.getBoundingClientRect();
 
@@ -905,18 +914,83 @@
       const clickX = (e.clientX - rect.left) * scaleX;
       const clickY = (e.clientY - rect.top) * scaleY;
 
-      let tocado = false;
-      codigosDetectados.forEach((item) => {
-        const { x, y, w, h } = item.box;
-        if (clickX >= x && clickX <= (x + w) && clickY >= y && clickY <= (y + h)) {
-          item.selected = !item.selected;
-          tocado = true;
-        }
-      });
+      // Desplazamiento si la vista está recortada
+      const origenX = (vistaRecortada && roiRecorte.w > 0) ? roiRecorte.x : 0;
+      const origenY = (vistaRecortada && roiRecorte.h > 0) ? roiRecorte.y : 0;
+      const absX = clickX + origenX;
+      const absY = clickY + origenY;
 
-      if (tocado) {
+      // 1. ¿Tocó un recuadro existente? Alternar estado
+      let tocoExistente = false;
+      for (const item of codigosDetectados) {
+        if (absX >= item.box.x && absX <= (item.box.x + item.box.w) &&
+            absY >= item.box.y && absY <= (item.box.y + item.box.h)) {
+          item.selected = !item.selected;
+          tocoExistente = true;
+          break;
+        }
+      }
+
+      if (tocoExistente) {
         redibujarCanvasFoto();
         renderizarListaCodigosDetectados();
+        return;
+      }
+
+      // 2. Si tocó una zona sin recuadro: FORZAR DETECCIÓN PUNTUAL (Barcode o QR)
+      showToast("Analizando código en este punto...", "info", 1000);
+
+      const radioW = Math.min(380, imagenOriginal.width);
+      const radioH = Math.min(220, imagenOriginal.height);
+      const px = Math.max(0, Math.min(imagenOriginal.width - radioW, absX - radioW / 2));
+      const py = Math.max(0, Math.min(imagenOriginal.height - radioH, absY - radioH / 2));
+
+      const sub = document.createElement('canvas');
+      sub.width = radioW; sub.height = radioH;
+      const sCtx = sub.getContext('2d');
+      // Si tenemos canvas procesado usarlo, sino imagen original
+      const source = canvasProcesadoGlobal || imagenOriginal;
+      sCtx.drawImage(source, px, py, radioW, radioH, 0, 0, radioW, radioH);
+
+      let encontrado = false;
+
+      // Intentar con BarcodeDetector (incluyendo QR en toque puntual)
+      if ('BarcodeDetector' in window) {
+        try {
+          const probeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'qr_code'] });
+          const res = await probeDetector.detect(sub);
+          if (res && res.length > 0) {
+            const b = res[0];
+            const limpio = limpiarSerial(b.rawValue);
+            if (limpio) {
+              codigosDetectados.push({
+                id: codigosDetectados.length,
+                raw: b.rawValue,
+                serial: limpio,
+                format: b.format,
+                box: {
+                  x: Math.round(px + b.boundingBox.x),
+                  y: Math.round(py + b.boundingBox.y),
+                  w: Math.round(b.boundingBox.width),
+                  h: Math.round(b.boundingBox.height)
+                },
+                selected: true
+              });
+              encontrado = true;
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (encontrado) {
+        soundSuccess();
+        if (navigator.vibrate) navigator.vibrate(60);
+        showToast("¡Código agregado!", "success", 1500);
+        calcularRegionRecorte();
+        redibujarCanvasFoto();
+        renderizarListaCodigosDetectados();
+      } else {
+        showToast("No se distinguió código en este punto", "warn", 1400);
       }
     });
 
@@ -926,7 +1000,7 @@
       const btnText = document.getElementById('btn-confirm-text');
 
       if (codigosDetectados.length === 0) {
-        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">No se encontraron códigos.</p>';
+        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">No hay códigos seleccionados.</p>';
         btnConfirmar.setAttribute('disabled', 'true');
         btnText.innerText = 'Registrar 0 Códigos';
         return;
@@ -934,29 +1008,21 @@
 
       const seleccionadosCount = codigosDetectados.filter(c => c.selected).length;
       btnText.innerText = `Registrar ${seleccionadosCount} Códigos Seleccionados`;
-      if (seleccionadosCount > 0) {
-        btnConfirmar.removeAttribute('disabled');
-      } else {
-        btnConfirmar.setAttribute('disabled', 'true');
-      }
+      if (seleccionadosCount > 0) btnConfirmar.removeAttribute('disabled');
+      else btnConfirmar.setAttribute('disabled', 'true');
 
-      container.innerHTML = codigosDetectados.map((it) => {
-        const esUPC = /^\d{12}$/.test(it.serial);
-        return `
-          <div onclick="toggleSelectCodigo(${it.id})" class="p-2 rounded-lg border ${it.selected ? 'bg-emerald-950/40 border-emerald-500/60' : 'bg-slate-950 border-slate-800'} flex items-center justify-between cursor-pointer transition-colors">
-            <div class="flex items-center gap-2 overflow-hidden mr-2">
-              <input type="checkbox" ${it.selected ? 'checked' : ''} class="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 pointer-events-none">
-              <div>
-                <span class="font-mono font-bold text-xs ${it.selected ? 'text-emerald-400' : 'text-slate-400'}">${it.serial}</span>
-                <span class="text-[10px] text-slate-500 ml-1 font-mono">${esUPC ? '(UPC Comercial)' : '(Serial)'}</span>
-              </div>
-            </div>
-            <span class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${it.selected ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
-              ${it.selected ? 'Incluir' : 'Omitir'}
-            </span>
+      container.innerHTML = codigosDetectados.map((it) => `
+        <div onclick="toggleSelectCodigo(${it.id})" class="p-2 rounded-lg border ${it.selected ? 'bg-emerald-950/40 border-emerald-500/60' : 'bg-slate-950 border-slate-800'} flex items-center justify-between cursor-pointer transition-colors">
+          <div class="flex items-center gap-2 overflow-hidden mr-2">
+            <input type="checkbox" ${it.selected ? 'checked' : ''} class="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 pointer-events-none">
+            <span class="font-mono font-bold text-xs ${it.selected ? 'text-emerald-400' : 'text-slate-500'}">${it.serial}</span>
+            <span class="text-[9px] uppercase px-1 rounded bg-slate-800 text-slate-400">${it.format || '1D'}</span>
           </div>
-        `;
-      }).join('');
+          <span class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${it.selected ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
+            ${it.selected ? 'Incluir' : 'Omitir'}
+          </span>
+        </div>
+      `).join('');
     }
 
     function toggleSelectCodigo(id) {
@@ -992,7 +1058,50 @@
       switchTab('list');
     }
 
-    // --- MANEJO DE PESTAÑAS ---
+    function reanudarCamaraEnVivo() {
+      imagenOriginal = null;
+      codigosDetectados = [];
+      document.getElementById('photo-preview-card').classList.add('hidden');
+      document.getElementById('controls-capture-live').classList.remove('hidden');
+    }
+
+    // =========================================================================
+    // --- MICROVISOR Y MODAL PANTALLA COMPLETA ---
+    // =========================================================================
+
+    function actualizarMicrovisor(canvasProc, angulo) {
+      const microCanvas = document.getElementById('micro-canvas');
+      const microStatus = document.getElementById('micro-status');
+      const ctx = microCanvas.getContext('2d');
+
+      microCanvas.width = canvasProc.width;
+      microCanvas.height = canvasProc.height;
+      ctx.drawImage(canvasProc, 0, 0);
+
+      microStatus.innerText = `Deskew: ${angulo !== 0 ? (angulo > 0 ? `+${angulo}°` : `${angulo}°`) : '0° (Nivelado)'} | Binarizado 1D`;
+    }
+
+    function abrirModalMicrovisor() {
+      if (!canvasProcesadoGlobal) return;
+      const modal = document.getElementById('modal-microvisor');
+      const modalCanvas = document.getElementById('modal-micro-canvas');
+      const ctx = modalCanvas.getContext('2d');
+
+      modalCanvas.width = canvasProcesadoGlobal.width;
+      modalCanvas.height = canvasProcesadoGlobal.height;
+      ctx.drawImage(canvasProcesadoGlobal, 0, 0);
+
+      modal.classList.remove('hidden');
+    }
+
+    function cerrarModalMicrovisor() {
+      document.getElementById('modal-microvisor').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // --- NAVEGACIÓN DE PESTAÑAS ---
+    // =========================================================================
+
     function showToast(msg, type = "success", duration = 1500) {
       const box = document.getElementById('toast-box');
       box.innerHTML = '';
@@ -1035,7 +1144,7 @@
         camWrapper.classList.remove('hidden');
         pPhoto.classList.remove('hidden');
         bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        modeDesc.innerText = "Foto Lote (Enmarcar Códigos)";
+        modeDesc.innerText = "Foto Lote (Multi-Scan 128/39)";
         laserLine.classList.add('hidden');
       } else {
         camWrapper.classList.add('hidden');

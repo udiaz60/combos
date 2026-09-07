@@ -3,25 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lector de Seriales - Inventario TI</title>
-  <!-- Tailwind CSS y Html5-Qrcode por CDN -->
+  <title>Lector de Seriales - Inventario TI v1</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    /* Ajustes para el visor en móvil */
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
     #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 230px; }
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
-    /* Guía visual horizontal calibrada para seriales 1D */
+    /* Láser de enfoque: SOLO se muestra cuando la cámara está transmitiendo */
     .laser-line {
-      position: absolute; top: 50%; left: 10%; right: 10%; height: 2px;
+      position: absolute; top: 50%; left: 8%; right: 8%; height: 2px;
       background: rgba(16, 185, 129, 0.85); box-shadow: 0 0 10px rgba(16, 185, 129, 1);
       transform: translateY(-50%); pointer-events: none; z-index: 10;
     }
 
-    /* Animación Toast */
     .toast-anim {
       animation: popToast 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
@@ -33,14 +30,14 @@
 </head>
 <body class="bg-slate-950 text-slate-100 flex flex-col min-h-screen select-none font-sans">
 
-  <!-- Toast Flotante No Bloqueante -->
+  <!-- Toast Flotante -->
   <div id="toast-box" class="fixed top-14 left-0 right-0 z-50 flex flex-col items-center pointer-events-none px-4 max-w-sm mx-auto"></div>
 
   <!-- Barra Superior -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
       <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
-      <p class="text-[11px] text-emerald-400 font-semibold">Modo Serial (Code 128 / 39)</p>
+      <p class="text-[11px] text-emerald-400 font-semibold">Solo Serial (Code 128 / 39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
       0 seriales
@@ -53,7 +50,7 @@
     <!-- PESTAÑA 1: ESCÁNER -->
     <section id="tab-scan" class="space-y-3">
       
-      <!-- Campo Observación Fija -->
+      <!-- Observación Fija -->
       <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-sm">
         <label for="obs-input" class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
           Observación fija (Ubicación / Lote)
@@ -61,37 +58,41 @@
         <input 
           type="text" 
           id="obs-input" 
-          placeholder="Ej: Sala 102 - Torre A (se mantiene fija)" 
+          placeholder="Ej: Sala 102 - Torre A" 
           class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
         />
       </div>
 
-      <!-- Visor de Cámara HD Calibrado -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner">
+      <!-- Visor de Cámara -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[180px] flex items-center justify-center">
         <div id="reader"></div>
-        <div class="laser-line"></div>
-        <div id="loading-cam" class="p-8 text-center text-xs text-slate-400">
-          Iniciando cámara HD para barras finas...
+        <!-- Línea láser oculta por defecto para que nunca tape los mensajes de error -->
+        <div id="laser-line" class="laser-line hidden"></div>
+        
+        <!-- Panel de Estado / Botón de Permisos si falla -->
+        <div id="cam-status" class="p-6 text-center text-xs space-y-3 z-20">
+          <p id="cam-msg" class="text-slate-400 leading-relaxed">Iniciando cámara trasera...</p>
+          <button id="btn-permiso" onclick="iniciarCamaraDirecta()" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-lg active:scale-95 transition-all">
+            📷 Tocar aquí para Conceder Permiso
+          </button>
         </div>
       </div>
 
-      <!-- Barra de Controles de Cámara (Zoom y Flash) -->
+      <!-- Controles de Cámara (Zoom y Linterna) -->
       <div class="flex items-center justify-between bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
-        <!-- Selector de Zoom -->
         <div id="zoom-container" class="hidden flex items-center gap-1">
           <span class="text-[11px] font-bold text-slate-400 mr-1 uppercase">Zoom:</span>
           <button id="btn-zoom-1" onclick="aplicarZoom(1)" class="bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md">1x</button>
           <button id="btn-zoom-2" onclick="aplicarZoom(2)" class="bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md">2x</button>
         </div>
-        <div id="zoom-placeholder" class="text-[11px] text-slate-500">Enfoque a 15-20 cm</div>
+        <div id="zoom-placeholder" class="text-[11px] text-slate-500">Distancia recomendada: 15 a 20 cm</div>
 
-        <!-- Linterna -->
         <button id="btn-torch" onclick="toggleTorch()" class="hidden bg-slate-800 border border-slate-700 text-xs px-3 py-1.5 rounded-lg text-slate-300 active:bg-slate-700 flex items-center gap-1">
           <span>🔦</span> Linterna
         </button>
       </div>
 
-      <!-- Botón de Acción Principal: Copiar para Google Sheets -->
+      <!-- Copiar para Sheets / Excel -->
       <button 
         onclick="copiarParaSheets()" 
         class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
@@ -102,12 +103,12 @@
         <span>📋 Copiar Lista para Sheets / Excel</span>
       </button>
 
-      <!-- Entrada manual de respaldo o pistola de código de barras -->
+      <!-- Entrada manual -->
       <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex gap-2">
         <input 
           type="text" 
           id="manual-input" 
-          placeholder="Entrada manual o pistola USB..." 
+          placeholder="Entrada manual o lector USB..." 
           onkeydown="if(event.key==='Enter') agregarManual();" 
           class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
         />
@@ -125,14 +126,12 @@
           Vaciar Todo
         </button>
       </div>
-      <div id="items-container" class="space-y-1.5 max-h-[65vh] overflow-y-auto">
-        <!-- Renderizado dinámico -->
-      </div>
+      <div id="items-container" class="space-y-1.5 max-h-[65vh] overflow-y-auto"></div>
     </section>
 
   </main>
 
-  <!-- Navegación Inferior Móvil -->
+  <!-- Navegación Inferior -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
     <button id="btn-nav-scan" onclick="switchNav('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,7 +185,7 @@
     document.addEventListener('touchstart', () => getAudioCtx(), { once: true });
     document.addEventListener('click', () => getAudioCtx(), { once: true });
 
-    // --- GESTIÓN DE LOCALSTORAGE ---
+    // --- LOCALSTORAGE ---
     function getDatos() {
       try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { return []; }
     }
@@ -237,13 +236,10 @@
       }
     }
 
-    // --- REGISTRO Y PARSEO ---
     function limpiarSerial(raw) {
       if (!raw) return '';
       let s = String(raw).replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
-      // Elimina posibles prefijos de fábrica como S/N, SN:, SERIAL:
       s = s.replace(/^(S\/N|SN|SERIAL)[\s:\-\]]*/i, '');
-      // Elimina corchetes [ 9CP3151BM2 ] o paréntesis
       s = s.replace(/^[\[\(\{]+|[\]\)\}]+$/g, '').trim();
       return s;
     }
@@ -252,15 +248,13 @@
       const limpio = limpiarSerial(serialBruto);
       if (!limpio) return;
 
-      // FILTRO EXTRA: Si llegase a capturar 12 dígitos exactamente numéricos (UPC de la derecha), descartar
+      // Ignorar si lee el código UPC comercial de 12 dígitos
       if (/^\d{12}$/.test(limpio)) {
         showToast("UPC comercial ignorado", "warn", 1200);
         return;
       }
 
       const items = getDatos();
-
-      // Validación anti-duplicados instantánea
       const existe = items.some(i => i.serial.toUpperCase() === limpio.toUpperCase());
       if (existe) {
         soundDuplicate();
@@ -273,7 +267,6 @@
       const d = new Date();
       const fecha = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      // Guardar al inicio de la lista
       items.unshift({ serial: limpio, observacion: obs, fecha: fecha });
       guardarDatos(items);
 
@@ -288,7 +281,6 @@
       input.value = '';
     }
 
-    // --- EXPORTAR A GOOGLE SHEETS / EXCEL (TSV) ---
     async function copiarParaSheets() {
       const items = getDatos();
       if (items.length === 0) {
@@ -302,7 +294,7 @@
       try {
         await navigator.clipboard.writeText(tsvContent);
         showToast(`¡Copiados ${items.length} seriales!`, "success", 2000);
-        alert(`¡Copiado al portapapeles!\n\nAbre tu hoja de cálculo en Sheets o Excel y pega directamente (Ctrl+V). Cada dato quedará en su columna.`);
+        alert(`¡Copiado al portapapeles!\n\nAbre tu hoja de cálculo en Sheets o Excel y dale Pegar (Ctrl+V).`);
       } catch (err) {
         const ta = document.createElement('textarea');
         ta.value = tsvContent;
@@ -314,13 +306,12 @@
       }
     }
 
-    // --- CÁMARA (ALTA RESOLUCIÓN Y FORMATOS EXCLUSIVOS CODE 128 / 39) ---
+    // --- CÁMARA (INICIALIZACIÓN DIRECTA SIN BLOQUEOS) ---
     function onScanSuccess(decodedText) {
       const raw = String(decodedText || '').trim();
       if (!raw) return;
 
       const now = Date.now();
-      // Antirrebote de 2.5 seg si enfoca el mismo serial
       if (raw === lastCode && (now - lastTime) < 2500) return;
 
       if (isProcessing) return;
@@ -329,80 +320,80 @@
       lastTime = now;
 
       registrarSerial(raw);
-
       setTimeout(() => { isProcessing = false; }, 200);
     }
 
-    async function initCamera() {
-      const loadingEl = document.getElementById('loading-cam');
+    async function iniciarCamaraDirecta() {
+      const statusBox = document.getElementById('cam-status');
+      const msgEl = document.getElementById('cam-msg');
+      const btnPermiso = document.getElementById('btn-permiso');
+      const laserLine = document.getElementById('laser-line');
+
+      msgEl.innerText = "Abriendo cámara trasera...";
+      btnPermiso.classList.add('hidden');
 
       try {
-        // Restricción estricta: Únicamente decodificar Code 128 y Code 39 (Ceguera contra UPC/EAN)
-        const formatosSerial = [
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39
-        ];
-
-        html5QrCode = new Html5Qrcode("reader", {
-          formatsToSupport: formatosSerial,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-          verbose: false
-        });
-
-        // Forzar resolución Full HD / HD para distinguir microbarras de alta densidad
-        const cameraConstraints = {
-          facingMode: "environment",
-          width: { min: 1280, ideal: 1920 },
-          height: { min: 720, ideal: 1080 }
-        };
-
-        // Mira rectangular alargada, estrecha en altura para calzar exactamente con el serial
-        const scanConfig = { 
-          fps: 25, 
-          qrbox: (w, h) => {
-            const boxW = Math.floor(Math.min(w * 0.90, 320));
-            const boxH = Math.floor(Math.min(h * 0.32, 95));
-            return { width: Math.max(boxW, 240), height: Math.max(boxH, 80) };
-          },
-          aspectRatio: 1.777778
-        };
-
-        try {
-          await html5QrCode.start(cameraConstraints, scanConfig, onScanSuccess);
-        } catch (e) {
-          // Fallback en caso de que el navegador móvil rechace las restricciones ideales
-          await html5QrCode.start({ facingMode: "environment" }, scanConfig, onScanSuccess);
+        if (!html5QrCode) {
+          // Solo formatos de serial: Code 128 y Code 39
+          html5QrCode = new Html5Qrcode("reader", {
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39
+            ],
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            verbose: false
+          });
         }
 
-        loadingEl.classList.add('hidden');
+        // Mira estrecha horizontal para calzar el serial
+        const scanConfig = { 
+          fps: 24, 
+          qrbox: (w, h) => {
+            const boxW = Math.floor(Math.min(w * 0.90, 320));
+            const boxH = Math.floor(Math.min(h * 0.35, 95));
+            return { width: Math.max(boxW, 220), height: Math.max(boxH, 75) };
+          }
+        };
+
+        // Solicitar cámara trasera sin forzar anchos rígidos
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          scanConfig,
+          onScanSuccess
+        );
+
+        // Si arranca con éxito: ocultar aviso y encender la línea láser
+        statusBox.classList.add('hidden');
+        laserLine.classList.remove('hidden');
         verificarCapacidadesCamara();
 
       } catch (err) {
-        console.error(err);
-        Html5Qrcode.getCameras().then(cams => {
-          if (cams && cams.length) {
-            html5QrCode.start(cams[cams.length - 1].id, { fps: 20, qrbox: { width: 280, height: 95 } }, onScanSuccess)
-              .then(() => loadingEl.classList.add('hidden'));
-          } else {
-            loadingEl.innerText = "No se detectó cámara disponible.";
-          }
-        }).catch(() => {
-          loadingEl.innerText = "Permiso denegado. Asegúrate de cargar por HTTPS.";
-        });
+        console.error("Error cámara:", err);
+        laserLine.classList.add('hidden'); // Asegurar que el láser esté apagado
+        btnPermiso.classList.remove('hidden');
+
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          msgEl.innerHTML = `
+            <span class="text-rose-400 font-bold text-sm block mb-1">Permiso Denegado</span>
+            1. Toca el icono de <b>ajustes / candado 🔒</b> junto al link.<br>
+            2. Cambia <b>Cámara</b> a <b>Permitir</b>.<br>
+            3. Luego toca el botón de abajo:
+          `;
+        } else {
+          msgEl.innerHTML = `
+            <span class="text-amber-400 font-bold block mb-1">No se pudo abrir la cámara</span>
+            Si abriste desde WhatsApp, toca los 3 puntos arriba y elige <b>"Abrir en Chrome"</b>.
+          `;
+        }
       }
     }
 
-    // --- VERIFICACIÓN DE ZOOM Y LINTERNA ---
     function verificarCapacidadesCamara() {
       try {
         const track = html5QrCode.getRunningTrackCameraCapabilities();
-        
-        // Linterna
         if (track && track.torchFeature && track.torchFeature().isSupported()) {
           document.getElementById('btn-torch').classList.remove('hidden');
         }
-
-        // Zoom nativo
         if (track && track.zoomFeature && track.zoomFeature().isSupported()) {
           const maxZoom = track.zoomFeature().max();
           if (maxZoom >= 2) {
@@ -421,15 +412,12 @@
 
     function aplicarZoom(factor) {
       if (!html5QrCode) return;
-      html5QrCode.applyVideoConstraints({
-        advanced: [{ zoom: factor }]
-      }).then(() => {
+      html5QrCode.applyVideoConstraints({ advanced: [{ zoom: factor }] }).then(() => {
         document.getElementById('btn-zoom-1').className = factor === 1 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md";
         document.getElementById('btn-zoom-2').className = factor === 2 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md";
       }).catch(() => {});
     }
 
-    // --- TOAST VISUAL ---
     function showToast(msg, type = "success", duration = 1500) {
       const box = document.getElementById('toast-box');
       box.innerHTML = '';
@@ -442,7 +430,6 @@
       setTimeout(() => { box.innerHTML = ''; }, duration);
     }
 
-    // --- PESTAÑAS ---
     function switchNav(tab) {
       const sScan = document.getElementById('tab-scan');
       const sList = document.getElementById('tab-list');
@@ -462,7 +449,6 @@
       }
     }
 
-    // Persistencia de observación
     document.getElementById('obs-input').addEventListener('input', e => {
       localStorage.setItem('inv_html_obs', e.target.value);
     });
@@ -471,7 +457,7 @@
       const savedObs = localStorage.getItem('inv_html_obs');
       if (savedObs) document.getElementById('obs-input').value = savedObs;
       renderizarLista();
-      initCamera();
+      iniciarCamaraDirecta();
     });
   </script>
 </body>

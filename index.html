@@ -22,6 +22,16 @@
     };
   </script>
   <script async src="https://docs.opencv.org/4.9.0/opencv.js"></script>
+  <script>
+    // ZXing (zxing-js) es un decodificador 1D/2D independiente de Quagga2 y del
+    // BarcodeDetector nativo. Suele ser más tolerante a ruido/mala iluminación en
+    // Code 128 y Code 39. Se carga aparte y de forma opcional: si el CDN falla,
+    // la app sigue funcionando con la librería nativa.
+    var zxingReady = false;
+  </script>
+  <script src="https://unpkg.com/@zxing/browser@0.2.1"
+    onload="zxingReady = true; console.log('ZXing listo'); if (typeof actualizarNotaPreproc === 'function') actualizarNotaPreproc();"
+    onerror="console.warn('No se pudo cargar ZXing desde el CDN');"></script>
   <style>
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
     #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 240px; }
@@ -127,7 +137,27 @@
 
     <!-- PESTAÑA 2: FOTO MULTI-SCAN (AMPLIO, RECORTADO Y DINÁMICO) -->
     <section id="panel-photo" class="hidden space-y-3">
-      
+
+      <!-- AJUSTES DE PROCESAMIENTO / LIBRERÍA -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-2 text-[11px]">
+        <div class="flex items-center justify-between gap-2">
+          <label for="select-preproc" class="text-slate-400 font-bold uppercase tracking-wider">Preprocesamiento</label>
+          <select id="select-preproc" onchange="cambiarMetodoPreproc(this.value)" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-[11px]">
+            <option value="none">Sin preprocesamiento</option>
+            <option value="js">Método JS (deskew + Sauvola)</option>
+            <option value="opencv" selected>OpenCV.js (CLAHE + adaptativo)</option>
+          </select>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <label for="select-decoder" class="text-slate-400 font-bold uppercase tracking-wider">Librería 1D</label>
+          <select id="select-decoder" onchange="cambiarLibreriaDecoder(this.value)" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-[11px]">
+            <option value="nativo" selected>Nativa (BarcodeDetector + Quagga2)</option>
+            <option value="zxing">ZXing (más precisa 128/39)</option>
+          </select>
+        </div>
+        <p id="preproc-status-note" class="text-slate-500 leading-snug"></p>
+      </div>
+
       <!-- Botón de Congelar Imagen -->
       <div id="controls-capture-live" class="space-y-2">
         <button 
@@ -301,6 +331,14 @@
     let codigosDetectados = [];
     let vistaRecortada = true;
     let roiRecorte = { x: 0, y: 0, w: 0, h: 0 };
+
+    // Método de preprocesamiento de imagen y librería de decodificación 1D,
+    // seleccionables desde la pestaña "Foto Lote" y persistidos en localStorage.
+    // 'none'  -> usa la imagen tal cual (sin binarizar, sin pérdida de información)
+    // 'js'    -> fuerza el pipeline manual (deskew + umbral Sauvola)
+    // 'opencv'-> intenta OpenCV.js y cae a 'js' si no está listo o falla
+    let metodoPreproc = localStorage.getItem('inv_metodo_preproc') || 'opencv';
+    let libreriaDecoder = localStorage.getItem('inv_libreria_decoder') || 'nativo';
 
     // --- AUDIO SINTETIZADO ---
     let audioCtx = null;
@@ -899,9 +937,19 @@
       }
     }
 
-    // Punto único de entrada: usa OpenCV si está listo, y si algo falla (o nunca
-    // cargó) cae automáticamente al pipeline manual en JS puro.
+    // Punto único de entrada: respeta el método elegido en el selector de la UI.
+    // 'none'   -> no binariza nada (evita el "sierra"/pérdida de info que se veía
+    //             al binarizar; útil cuando el binarizado empeora la lectura).
+    // 'js'     -> fuerza el pipeline manual (deskew + Sauvola), sin tocar OpenCV.
+    // 'opencv' -> intenta OpenCV.js y, si no está listo o falla, cae al JS.
     function preprocesarCanvasConCorreccion(srcCanvas) {
+      if (metodoPreproc === 'none') {
+        return { canvasProcesado: srcCanvas, anguloDetectado: 0 };
+      }
+      if (metodoPreproc === 'js') {
+        return preprocesarCanvasConCorreccionJS(srcCanvas);
+      }
+      // metodoPreproc === 'opencv'
       if (openCvReady && typeof cv !== 'undefined' && cv.Mat) {
         try {
           return preprocesarCanvasConCorreccionCV(srcCanvas);
@@ -910,6 +958,103 @@
         }
       }
       return preprocesarCanvasConCorreccionJS(srcCanvas);
+    }
+
+    // =========================================================================
+    // --- SELECTORES DE PREPROCESAMIENTO Y LIBRERÍA (persistentes) ---
+    // =========================================================================
+
+    function cambiarMetodoPreproc(valor) {
+      metodoPreproc = valor;
+      localStorage.setItem('inv_metodo_preproc', valor);
+      actualizarNotaPreproc();
+    }
+
+    function cambiarLibreriaDecoder(valor) {
+      libreriaDecoder = valor;
+      localStorage.setItem('inv_libreria_decoder', valor);
+      if (valor === 'zxing' && !window.ZXingBrowser) {
+        showToast('ZXing aún no cargó (sin internet o CDN bloqueado). Se usará la librería nativa mientras tanto.', 'warn', 3500);
+      }
+    }
+
+    // Avisa en la UI si el método elegido no está realmente disponible todavía
+    // (por ejemplo, OpenCV.js sigue descargando ~8 MB) para que no parezca que
+    // "no sirvió" cuando en realidad está usando el respaldo JS por ahora.
+    function actualizarNotaPreproc() {
+      const nota = document.getElementById('preproc-status-note');
+      if (!nota) return;
+      if (metodoPreproc === 'opencv' && !(openCvReady && typeof cv !== 'undefined' && cv.Mat)) {
+        nota.innerText = '⏳ OpenCV.js todavía no termina de cargar (~8 MB); mientras tanto se usa el método JS.';
+      } else if (metodoPreproc === 'none') {
+        nota.innerText = 'Se escaneará la imagen tal cual, sin binarizar.';
+      } else {
+        nota.innerText = '';
+      }
+    }
+
+    // Alias que también invoca el <script onload> de OpenCV (ver <head>), para
+    // refrescar la nota apenas OpenCV termine de inicializar.
+    function actualizarBadgeOpenCv() {
+      actualizarNotaPreproc();
+    }
+
+    // =========================================================================
+    // --- DECODIFICACIÓN 1D: NATIVA (BarcodeDetector) vs ZXING ---
+    // =========================================================================
+
+    let zxingReaderInstance = null;
+    function getZXingReader() {
+      if (!zxingReaderInstance && window.ZXingBrowser) {
+        zxingReaderInstance = new ZXingBrowser.BrowserMultiFormatReader();
+      }
+      return zxingReaderInstance;
+    }
+
+    // Decodifica con ZXing y normaliza el resultado al mismo formato que usa
+    // BarcodeDetector ({ rawValue, format, boundingBox }) para no duplicar lógica
+    // en el resto de la app.
+    async function decodificarConZXing(canvas) {
+      const reader = getZXingReader();
+      if (!reader) return [];
+      try {
+        const result = await reader.decodeFromCanvas(canvas);
+        if (!result) return [];
+        const puntos = (result.getResultPoints && result.getResultPoints()) || [];
+        let x = 0, y = 0, w = canvas.width, h = canvas.height;
+        if (puntos.length >= 2) {
+          const xs = puntos.map(p => p.getX());
+          const ys = puntos.map(p => p.getY());
+          const minX = Math.max(0, Math.min(...xs) - 10);
+          const minY = Math.max(0, Math.min(...ys) - 15);
+          const maxX = Math.min(canvas.width, Math.max(...xs) + 10);
+          const maxY = Math.min(canvas.height, Math.max(...ys) + 15);
+          x = minX; y = minY; w = Math.max(10, maxX - minX); h = Math.max(10, maxY - minY);
+        }
+        let formatoTxt = 'ZXING';
+        try { formatoTxt = String(result.getBarcodeFormat()); } catch (e) {}
+        return [{ rawValue: result.getText(), format: formatoTxt, boundingBox: { x, y, width: w, height: h } }];
+      } catch (e) {
+        // Lanza excepción cuando no encuentra código en el recorte: es normal.
+        return [];
+      }
+    }
+
+    // Punto único de entrada para decodificar 1D/QR desde un canvas, según la
+    // librería elegida en el selector. 'formats' solo aplica al motor nativo;
+    // ZXing prueba todos los formatos que soporta por defecto.
+    async function decodificarBarcodes(canvas, formats = ['code_128', 'code_39']) {
+      if (libreriaDecoder === 'zxing') {
+        return await decodificarConZXing(canvas);
+      }
+      if ('BarcodeDetector' in window) {
+        try {
+          const detector = new BarcodeDetector({ formats });
+          const res = await detector.detect(canvas);
+          return res.map(b => ({ rawValue: b.rawValue, format: b.format, boundingBox: b.boundingBox }));
+        } catch (e) { return []; }
+      }
+      return [];
     }
 
     // --- RESPALDO (sin OpenCV): el mismo pipeline manual de la versión anterior,
@@ -1098,11 +1243,9 @@
     // inclinación distinta, y una única rotación global solo "endereza" a los que
     // comparten ese ángulo (a los demás incluso los deja peor).
     async function intentarDecodificarConDeskewLocal(cropCanvas) {
-      if (!('BarcodeDetector' in window)) return [];
       try {
         const { canvasProcesado } = preprocesarCanvasConCorreccion(cropCanvas);
-        const detectorLocal = new BarcodeDetector({ formats: ['code_128', 'code_39'] });
-        return await detectorLocal.detect(canvasProcesado);
+        return await decodificarBarcodes(canvasProcesado);
       } catch (e) {
         return [];
       }
@@ -1160,13 +1303,11 @@
 
         const detectadosMap = new Map();
 
-        // 1. ESCANEO POR FRANJAS CON BARCODEDETECTOR
-        if ('BarcodeDetector' in window) {
-          const detector = new BarcodeDetector({ formats: ['code_128', 'code_39'] });
-
+        // 1. ESCANEO POR FRANJAS (librería nativa o ZXing, según el selector)
+        {
           async function scanRegion(targetCanvas, offsetX = 0, offsetY = 0) {
             try {
-              const res = await detector.detect(targetCanvas);
+              const res = await decodificarBarcodes(targetCanvas);
               for (const b of res) {
                 const limpio = limpiarSerial(b.rawValue);
                 if (!limpio) continue;
@@ -1202,7 +1343,8 @@
           // PASO RÁPIDO: regiones candidatas detectadas por morfología con OpenCV.
           // Suele encontrar la mayoría de los códigos con muy pocos recortes,
           // antes de recurrir a la malla sistemática (más lenta pero exhaustiva).
-          const regionesCandidatas = detectarRegionesCandidatasCV(rawCanvas);
+          // Solo tiene sentido si el método de preprocesamiento es OpenCV.
+          const regionesCandidatas = (metodoPreproc === 'opencv') ? detectarRegionesCandidatasCV(rawCanvas) : [];
           for (const f of regionesCandidatas) {
             const subRaw = document.createElement('canvas');
             subRaw.width = f.w; subRaw.height = f.h;
@@ -1477,33 +1619,31 @@
 
       let encontrado = false;
 
-      // Intentar con BarcodeDetector (incluyendo QR en toque puntual)
-      if ('BarcodeDetector' in window) {
-        try {
-          const probeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'qr_code'] });
-          const res = await probeDetector.detect(sub);
-          if (res && res.length > 0) {
-            const b = res[0];
-            const limpio = limpiarSerial(b.rawValue);
-            if (limpio) {
-              codigosDetectados.push({
-                id: codigosDetectados.length,
-                raw: b.rawValue,
-                serial: limpio,
-                format: b.format,
-                box: {
-                  x: Math.round(px + b.boundingBox.x),
-                  y: Math.round(py + b.boundingBox.y),
-                  w: Math.round(b.boundingBox.width),
-                  h: Math.round(b.boundingBox.height)
-                },
-                selected: true
-              });
-              encontrado = true;
-            }
+      // Intentar con la librería elegida (incluyendo QR en toque puntual cuando
+      // se usa el motor nativo; ZXing prueba todos sus formatos por defecto)
+      try {
+        const res = await decodificarBarcodes(sub, ['code_128', 'code_39', 'qr_code']);
+        if (res && res.length > 0) {
+          const b = res[0];
+          const limpio = limpiarSerial(b.rawValue);
+          if (limpio) {
+            codigosDetectados.push({
+              id: codigosDetectados.length,
+              raw: b.rawValue,
+              serial: limpio,
+              format: b.format,
+              box: {
+                x: Math.round(px + b.boundingBox.x),
+                y: Math.round(py + b.boundingBox.y),
+                w: Math.round(b.boundingBox.width),
+                h: Math.round(b.boundingBox.height)
+              },
+              selected: true
+            });
+            encontrado = true;
           }
-        } catch (err) {}
-      }
+        }
+      } catch (err) {}
 
       if (encontrado) {
         soundSuccess();
@@ -1693,6 +1833,10 @@
 
       const savedSheetsUrl = localStorage.getItem(SHEETS_URL_KEY);
       if (savedSheetsUrl) document.getElementById('sheets-url-input').value = savedSheetsUrl;
+
+      document.getElementById('select-preproc').value = metodoPreproc;
+      document.getElementById('select-decoder').value = libreriaDecoder;
+      actualizarNotaPreproc();
 
       renderizarLista();
       iniciarCamaraDirecta();

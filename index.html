@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>v1.1 Lector de Seriales - Inventario TI</title>
+  <title>Lector de Seriales - Inventario TI</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
-    #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 230px; }
+    #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 220px; }
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
+    /* Láser de enfoque activo solo en modo continuo */
     .laser-line {
       position: absolute; top: 50%; left: 8%; right: 8%; height: 2px;
       background: rgba(16, 185, 129, 0.85); box-shadow: 0 0 10px rgba(16, 185, 129, 1);
@@ -33,24 +34,24 @@
   <div id="toast-box" class="fixed top-14 left-0 right-0 z-50 flex flex-col items-center pointer-events-none px-4 max-w-sm mx-auto"></div>
 
   <!-- Barra Superior -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md">
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
       <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
-      <p class="text-[11px] text-emerald-400 font-semibold" id="header-subtitle">Solo Serial (Code 128 / 39)</p>
+      <p class="text-[11px] text-emerald-400 font-semibold" id="header-mode-desc">Modo Continuo (Code 128/39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
       0 seriales
     </span>
   </header>
 
-  <!-- Contenedor Principal -->
+  <!-- CONTENEDOR PRINCIPAL -->
   <main class="flex-1 p-3 pb-24 overflow-y-auto space-y-3 max-w-md mx-auto w-full">
     
-    <!-- PESTAÑA 1: ESCÁNER EN VIVO (Tu código base intacto) -->
-    <section id="tab-scan" class="space-y-3">
+    <!-- SECCIÓN CÁMARA GLOBAL (Visible tanto en Continuo como en Foto Lote) -->
+    <div id="camera-global-wrapper" class="space-y-2">
       
       <!-- Observación Fija -->
-      <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-sm">
+      <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-sm">
         <label for="obs-input" class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
           Observación fija (Ubicación / Lote)
         </label>
@@ -58,12 +59,12 @@
           type="text" 
           id="obs-input" 
           placeholder="Ej: Sala 102 - Torre A" 
-          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
+          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
         />
       </div>
 
-      <!-- Visor de Cámara -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[180px] flex items-center justify-center">
+      <!-- Visor de Cámara en Vivo Constante -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[170px] flex items-center justify-center">
         <div id="reader"></div>
         <div id="laser-line" class="laser-line hidden"></div>
         
@@ -76,36 +77,39 @@
       </div>
 
       <!-- Controles de Cámara (Zoom y Linterna) -->
-      <div class="flex items-center justify-between bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
+      <div class="flex items-center justify-between bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
         <div id="zoom-container" class="hidden flex items-center gap-1">
-          <span class="text-[11px] font-bold text-slate-400 mr-1 uppercase">Zoom:</span>
-          <button id="btn-zoom-1" onclick="aplicarZoom(1)" class="bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md">1x</button>
-          <button id="btn-zoom-2" onclick="aplicarZoom(2)" class="bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md">2x</button>
+          <span class="text-[10px] font-bold text-slate-400 mr-1 uppercase">Zoom:</span>
+          <button id="btn-zoom-1" onclick="aplicarZoom(1)" class="bg-indigo-600 text-white text-xs font-mono font-bold px-2 py-0.5 rounded">1x</button>
+          <button id="btn-zoom-2" onclick="aplicarZoom(2)" class="bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2 py-0.5 rounded">2x</button>
         </div>
-        <div id="zoom-placeholder" class="text-[11px] text-slate-500">Distancia recomendada: 15 a 20 cm</div>
+        <div id="zoom-placeholder" class="text-[10px] text-slate-500">Distancia ideal: 15-20 cm</div>
 
-        <button id="btn-torch" onclick="toggleTorch()" class="hidden bg-slate-800 border border-slate-700 text-xs px-3 py-1.5 rounded-lg text-slate-300 active:bg-slate-700 flex items-center gap-1">
+        <button id="btn-torch" onclick="toggleTorch()" class="hidden bg-slate-800 border border-slate-700 text-xs px-2.5 py-1 rounded-lg text-slate-300 active:bg-slate-700 flex items-center gap-1">
           <span>🔦</span> Linterna
         </button>
       </div>
 
-      <!-- Copiar para Sheets / Excel -->
+    </div>
+
+    <!-- PESTAÑA 1: MODO CONTINUO (Acciones Rápidas) -->
+    <section id="panel-scan" class="space-y-2.5">
       <button 
         onclick="copiarParaSheets()" 
-        class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2"
       >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
         </svg>
         <span>📋 Copiar Lista para Sheets / Excel</span>
       </button>
 
       <!-- Entrada manual -->
-      <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex gap-2">
+      <div class="bg-slate-900 border border-slate-800 p-2 rounded-xl flex gap-2">
         <input 
           type="text" 
           id="manual-input" 
-          placeholder="Entrada manual o lector USB..." 
+          placeholder="Entrada manual o pistola..." 
           onkeydown="if(event.key==='Enter') agregarManual();" 
           class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
         />
@@ -115,94 +119,97 @@
       </div>
     </section>
 
-    <!-- PESTAÑA 2: FOTO MULTI-SCAN (NUEVA CAPACIDAD DE ENMARCADO Y SELECCIÓN) -->
-    <section id="tab-photo" class="hidden space-y-3">
+    <!-- PESTAÑA 2: MODO FOTO MULTI-SCAN (Viendo la cámara en vivo) -->
+    <section id="panel-photo" class="hidden space-y-3">
       
-      <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-2">
-        <p class="text-xs text-slate-300 font-semibold">Toma o sube una foto con varios códigos.</p>
-        <p class="text-[11px] text-slate-500">Se detectarán todos y podrás marcar con un toque los que deseas registrar.</p>
-        
-        <div class="flex gap-2 pt-1">
-          <!-- Capturar frame actual del visor si la cámara está activa -->
-          <button onclick="capturarDesdeVideo()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors">
-            <span>⚡</span> Congelar Cámara
-          </button>
-          
-          <!-- Tomar foto nativa de alta resolución con la app de cámara del móvil -->
-          <label class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer text-center transition-colors">
-            <span>📷</span> Tomar Foto HD
-            <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="procesarArchivoFoto(event)">
-          </label>
-        </div>
+      <!-- Botón de Disparo: Congelar mientras miras la cámara -->
+      <div id="controls-capture-live" class="space-y-2">
+        <button 
+          onclick="congelarYEnmarcar()" 
+          class="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <span>📸 Congelar y Enmarcar Códigos</span>
+        </button>
+        <p class="text-[11px] text-center text-slate-500">Apunta a la caja con ambos códigos en pantalla y pulsa el botón.</p>
       </div>
 
-      <!-- Contenedor Interactivo con Canvas para enmarcar -->
-      <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-2 space-y-3">
+      <!-- Tarjeta con la Foto Congelada y los Marcos Interactivos -->
+      <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-3">
+        <div class="flex justify-between items-center px-1">
+          <span class="text-xs font-bold text-slate-200">Foto Congelada</span>
+          <button onclick="reanudarCamaraEnVivo()" class="text-xs text-indigo-400 hover:underline flex items-center gap-1">
+            <span>🔄</span> Repetir foto
+          </button>
+        </div>
+
         <div class="relative overflow-hidden rounded-lg border border-slate-700 bg-black flex justify-center items-center">
-          <!-- Canvas interactivo donde se pinta la foto y los marcos tocables -->
           <canvas id="photo-canvas" class="max-w-full h-auto cursor-pointer block"></canvas>
           <div id="photo-loading-overlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-xs text-emerald-400 gap-2">
             <svg class="animate-spin h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            Analizando códigos en la imagen...
+            Detectando códigos...
           </div>
         </div>
 
-        <div class="flex items-center justify-between px-1">
-          <span class="text-xs text-slate-400">Toca el recuadro sobre la imagen o en la lista:</span>
-          <button onclick="marcarTodos(true)" class="text-[11px] text-indigo-400 hover:underline">Marcar todos</button>
+        <div class="flex items-center justify-between px-1 text-[11px]">
+          <span class="text-slate-400">Toca el recuadro para marcar/desmarcar:</span>
+          <button onclick="marcarTodos(true)" class="text-indigo-400 hover:underline">Todos</button>
         </div>
 
-        <!-- Lista de códigos detectados con switch individual -->
-        <div id="detected-checkboxes-list" class="space-y-1.5 max-h-44 overflow-y-auto pr-1"></div>
+        <!-- Lista de Códigos Detectados -->
+        <div id="detected-checkboxes-list" class="space-y-1.5 max-h-36 overflow-y-auto pr-1"></div>
 
-        <!-- Botón de Confirmación para Registrar el Lote -->
+        <!-- Confirmar Lote -->
         <button 
           id="btn-confirmar-lote" 
           onclick="importarCodigosSeleccionados()" 
           disabled
-          class="w-full bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg flex items-center justify-center gap-2"
+          class="w-full bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>
-          <span id="btn-confirm-text">Registrar 0 Códigos Seleccionados</span>
+          <span id="btn-confirm-text">Registrar Códigos</span>
         </button>
       </div>
 
     </section>
 
-    <!-- PESTAÑA 3: LISTA DE ESCANEADOS -->
-    <section id="tab-list" class="hidden space-y-3">
+    <!-- PESTAÑA 3: LISTA DE SERIALES REGISTRADOS -->
+    <section id="panel-list" class="hidden space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Seriales en Memoria Local</h2>
         <button onclick="vaciarTodoConfirm()" class="text-xs text-rose-400 hover:underline">
           Vaciar Todo
         </button>
       </div>
-      <div id="items-container" class="space-y-1.5 max-h-[65vh] overflow-y-auto"></div>
+      <div id="items-container" class="space-y-1.5 max-h-[60vh] overflow-y-auto"></div>
     </section>
 
   </main>
 
-  <!-- Navegación Inferior (3 Pestañas) -->
+  <!-- NAVEGACIÓN INFERIOR (3 Pestañas) -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
-    <button id="btn-nav-scan" onclick="switchNav('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
+    <button id="btn-nav-scan" onclick="switchTab('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
       </svg>
-      Escáner
+      Continuo
     </button>
-    <button id="btn-nav-photo" onclick="switchNav('photo')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
+    <button id="btn-nav-photo" onclick="switchTab('photo')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
       Foto Lote
     </button>
-    <button id="btn-nav-list" onclick="switchNav('list')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
+    <button id="btn-nav-list" onclick="switchTab('list')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
       </svg>
@@ -217,10 +224,11 @@
     let isTorchOn = false;
     let lastCode = '';
     let lastTime = 0;
+    let currentTab = 'scan'; // 'scan', 'photo', 'list'
 
-    // Estado del analizador de foto estática
+    // Datos de la foto congelada
     let imagenActual = null;
-    let codigosDetectados = []; // Array de: { raw, serial, box: {x,y,w,h}, format, selected: bool }
+    let codigosDetectados = [];
 
     // --- AUDIO SINTETIZADO ---
     let audioCtx = null;
@@ -366,7 +374,7 @@
       try {
         await navigator.clipboard.writeText(tsvContent);
         showToast(`¡Copiados ${items.length} seriales!`, "success", 2000);
-        alert(`¡Copiado al portapapeles!\n\nAbre tu hoja de cálculo en Sheets o Excel y dale Pegar (Ctrl+V).`);
+        alert(`¡Copiado al portapapeles!\n\nAbre Google Sheets o Excel y dale Pegar (Ctrl+V).`);
       } catch (err) {
         const ta = document.createElement('textarea');
         ta.value = tsvContent;
@@ -380,6 +388,9 @@
 
     // --- CÁMARA EN VIVO ---
     function onScanSuccess(decodedText) {
+      // Si el usuario está en la pestaña "Foto Lote", no registrar en automático
+      if (currentTab === 'photo') return;
+
       const raw = String(decodedText || '').trim();
       if (!raw) return;
 
@@ -432,7 +443,7 @@
         );
 
         statusBox.classList.add('hidden');
-        laserLine.classList.remove('hidden');
+        if (currentTab === 'scan') laserLine.classList.remove('hidden');
         verificarCapacidadesCamara();
 
       } catch (err) {
@@ -481,24 +492,23 @@
     function aplicarZoom(factor) {
       if (!html5QrCode) return;
       html5QrCode.applyVideoConstraints({ advanced: [{ zoom: factor }] }).then(() => {
-        document.getElementById('btn-zoom-1').className = factor === 1 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md";
-        document.getElementById('btn-zoom-2').className = factor === 2 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md";
+        document.getElementById('btn-zoom-1').className = factor === 1 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2 py-0.5 rounded" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2 py-0.5 rounded";
+        document.getElementById('btn-zoom-2').className = factor === 2 ? "bg-indigo-600 text-white text-xs font-mono font-bold px-2 py-0.5 rounded" : "bg-slate-800 text-slate-300 hover:text-white text-xs font-mono font-bold px-2 py-0.5 rounded";
       }).catch(() => {});
     }
 
     // =========================================================================
-    // --- NUEVO MÓDULO: FOTO MULTI-SCAN (ENMARCADO Y SELECCIÓN MÚLTIPLE) ---
+    // --- FOTO MULTI-SCAN (VIENDO LA CÁMARA Y CONGELANDO EN VIVO) ---
     // =========================================================================
 
-    // 1. Captura de un frame congelado desde el stream de video existente
-    function capturarDesdeVideo() {
+    function congelarYEnmarcar() {
       const videoEl = document.querySelector("#reader video");
       if (!videoEl || videoEl.videoWidth === 0) {
-        showToast("Inicia la cámara primero", "warn");
-        switchNav('scan');
+        showToast("Esperando imagen de la cámara...", "warn");
         return;
       }
 
+      // Capturar fotograma de alta resolución
       const canvas = document.createElement("canvas");
       canvas.width = videoEl.videoWidth;
       canvas.height = videoEl.videoHeight;
@@ -510,23 +520,11 @@
       img.src = canvas.toDataURL("image/jpeg", 0.95);
     }
 
-    // 2. Carga de imagen desde archivo o foto tomada con la app de cámara
-    function procesarArchivoFoto(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => procesarImagenParaMultiScan(img);
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    // 3. Procesamiento y detección de todos los códigos en la imagen
     async function procesarImagenParaMultiScan(img) {
       imagenActual = img;
+      
+      // Mostrar tarjeta de preview y ocultar botón de disparo inicial
+      document.getElementById('controls-capture-live').classList.add('hidden');
       document.getElementById('photo-preview-card').classList.remove('hidden');
       const overlay = document.getElementById('photo-loading-overlay');
       overlay.classList.remove('hidden');
@@ -534,7 +532,7 @@
       codigosDetectados = [];
 
       try {
-        // Opción A: API nativa BarcodeDetector (Soporta múltiples códigos y entrega boundingBox exacto)
+        // Detección de múltiples códigos con coordenadas
         if ('BarcodeDetector' in window) {
           const detector = new BarcodeDetector({ 
             formats: ['code_128', 'code_39', 'upc_a', 'ean_13', 'qr_code'] 
@@ -555,16 +553,15 @@
                 w: b.boundingBox.width,
                 h: b.boundingBox.height
               },
-              // Seleccionado por defecto SOLO si es un serial y NO un UPC comercial
+              // Seleccionado por defecto: Si es serial sí, si es UPC no
               selected: !esUPC
             };
           });
         } 
         
-        // Opción B: Fallback con html5-qrcode scanFile si BarcodeDetector no está en el navegador
+        // Fallback si el navegador no tiene BarcodeDetector
         if (codigosDetectados.length === 0 && html5QrCode) {
           try {
-            // scanFile procesa la imagen entera
             const tempFile = dataURLtoFile(img.src, "temp.jpg");
             const res = await html5QrCode.scanFile(tempFile, false);
             const limpio = limpiarSerial(res);
@@ -573,27 +570,32 @@
               raw: res,
               serial: limpio,
               format: 'CODE_128',
-              box: { x: img.width * 0.15, y: img.height * 0.35, w: img.width * 0.7, h: img.height * 0.3 },
+              box: { x: img.width * 0.1, y: img.height * 0.35, w: img.width * 0.8, h: img.height * 0.3 },
               selected: true
             });
-          } catch (e) {
-            // No se detectó con el motor fallback
-          }
+          } catch (e) {}
         }
 
       } catch (err) {
-        console.error("Error al detectar en foto:", err);
+        console.error("Error al detectar:", err);
       } finally {
         overlay.classList.add('hidden');
         redibujarCanvasFoto();
         renderizarListaCodigosDetectados();
 
         if (codigosDetectados.length === 0) {
-          showToast("No se detectaron códigos", "warn", 2000);
+          showToast("No se detectó código. Intenta a 15-20 cm", "warn", 2500);
         } else {
-          showToast(`${codigosDetectados.length} código(s) detectado(s)`, "success", 1500);
+          showToast(`${codigosDetectados.length} código(s) encontrado(s)`, "success", 1500);
         }
       }
+    }
+
+    function reanudarCamaraEnVivo() {
+      imagenActual = null;
+      codigosDetectados = [];
+      document.getElementById('photo-preview-card').classList.add('hidden');
+      document.getElementById('controls-capture-live').classList.remove('hidden');
     }
 
     function dataURLtoFile(dataurl, filename) {
@@ -605,7 +607,6 @@
       return new File([u8arr], filename, {type:mime});
     }
 
-    // 4. Dibujar foto y enmarcado interactivo en el Canvas
     function redibujarCanvasFoto() {
       if (!imagenActual) return;
       const canvas = document.getElementById('photo-canvas');
@@ -614,21 +615,17 @@
       canvas.width = imagenActual.width;
       canvas.height = imagenActual.height;
 
-      // Dibujar foto base
       ctx.drawImage(imagenActual, 0, 0);
 
-      // Dibujar recuadros para cada código detectado
       codigosDetectados.forEach((item) => {
         const { x, y, w, h } = item.box;
         ctx.save();
         ctx.lineWidth = Math.max(4, Math.floor(canvas.width * 0.007));
 
         if (item.selected) {
-          // Verde: Seleccionado para guardar
           ctx.strokeStyle = '#10b981';
           ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
         } else {
-          // Gris/Rojo suave: Desmarcado
           ctx.strokeStyle = '#64748b';
           ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
         }
@@ -636,7 +633,6 @@
         ctx.fillRect(x, y, w, h);
         ctx.strokeRect(x, y, w, h);
 
-        // Etiqueta flotante con el texto del código
         const fontSize = Math.max(14, Math.floor(canvas.width * 0.025));
         ctx.font = `bold ${fontSize}px monospace`;
         const label = `${item.selected ? '✓ ' : '✕ '}${item.serial}`;
@@ -652,19 +648,17 @@
       });
     }
 
-    // 5. Soporte de toques directamente sobre el Canvas para seleccionar/deseleccionar
+    // Tocar el Canvas para alternar selección
     document.getElementById('photo-canvas').addEventListener('click', (e) => {
       if (!imagenActual || codigosDetectados.length === 0) return;
       const canvas = document.getElementById('photo-canvas');
       const rect = canvas.getBoundingClientRect();
 
-      // Convertir coordenadas del click de pantalla a píxeles reales de la imagen
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       const clickX = (e.clientX - rect.left) * scaleX;
       const clickY = (e.clientY - rect.top) * scaleY;
 
-      // Determinar si el toque cayó dentro de la caja de algún código
       let tocado = false;
       codigosDetectados.forEach((item) => {
         const { x, y, w, h } = item.box;
@@ -680,16 +674,15 @@
       }
     });
 
-    // 6. Lista interactiva con checkboxes
     function renderizarListaCodigosDetectados() {
       const container = document.getElementById('detected-checkboxes-list');
       const btnConfirmar = document.getElementById('btn-confirmar-lote');
       const btnText = document.getElementById('btn-confirm-text');
 
       if (codigosDetectados.length === 0) {
-        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">No se encontraron códigos legibles en esta foto.</p>';
+        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">No se encontraron códigos.</p>';
         btnConfirmar.setAttribute('disabled', 'true');
-        btnText.innerText = 'Registrar 0 Códigos Seleccionados';
+        btnText.innerText = 'Registrar 0 Códigos';
         return;
       }
 
@@ -735,29 +728,25 @@
       renderizarListaCodigosDetectados();
     }
 
-    // 7. Confirmar e importar todos los códigos seleccionados
     function importarCodigosSeleccionados() {
       const seleccionados = codigosDetectados.filter(c => c.selected);
       if (seleccionados.length === 0) return;
 
       let guardados = 0;
       seleccionados.forEach(c => {
-        // Registra sin pitidos por cada uno para no saturar el audio
         const ok = registrarSerial(c.serial, true);
         if (ok) guardados++;
       });
 
       soundSuccess();
       if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
-      showToast(`¡${guardados} seriales registrados con éxito!`, "success", 2500);
+      showToast(`¡${guardados} seriales registrados!`, "success", 2500);
 
-      // Limpiar vista y pasar a la lista
-      codigosDetectados = [];
-      document.getElementById('photo-preview-card').classList.add('hidden');
-      switchNav('list');
+      reanudarCamaraEnVivo();
+      switchTab('list');
     }
 
-    // --- NAVEGACIÓN ENTRE LAS 3 PESTAÑAS ---
+    // --- MANEJO DE PESTAÑAS ---
     function showToast(msg, type = "success", duration = 1500) {
       const box = document.getElementById('toast-box');
       box.innerHTML = '';
@@ -770,37 +759,48 @@
       setTimeout(() => { box.innerHTML = ''; }, duration);
     }
 
-    function switchNav(tab) {
-      const sScan = document.getElementById('tab-scan');
-      const sPhoto = document.getElementById('tab-photo');
-      const sList = document.getElementById('tab-list');
+    function switchTab(tab) {
+      currentTab = tab;
+      const camWrapper = document.getElementById('camera-global-wrapper');
+      const pScan = document.getElementById('panel-scan');
+      const pPhoto = document.getElementById('panel-photo');
+      const pList = document.getElementById('panel-list');
       const bScan = document.getElementById('btn-nav-scan');
       const bPhoto = document.getElementById('btn-nav-photo');
       const bList = document.getElementById('btn-nav-list');
-      const subtitle = document.getElementById('header-subtitle');
+      const modeDesc = document.getElementById('header-mode-desc');
+      const laserLine = document.getElementById('laser-line');
 
-      // Ocultar todas las secciones
-      sScan.classList.add('hidden');
-      sPhoto.classList.add('hidden');
-      sList.classList.add('hidden');
+      // Ocultar paneles inferiores
+      pScan.classList.add('hidden');
+      pPhoto.classList.add('hidden');
+      pList.classList.add('hidden');
 
-      // Restaurar colores de botones
+      // Restaurar estilos de botones
       bScan.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
       bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
       bList.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
 
       if (tab === 'scan') {
-        sScan.classList.remove('hidden');
+        camWrapper.classList.remove('hidden');
+        pScan.classList.remove('hidden');
         bScan.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        subtitle.innerText = "Solo Serial (Code 128 / 39)";
+        modeDesc.innerText = "Modo Continuo (Code 128/39)";
+        laserLine.classList.remove('hidden');
       } else if (tab === 'photo') {
-        sPhoto.classList.remove('hidden');
+        // En Foto Lote: CÁMARA SIEMPRE VISIBLE para poder apuntar
+        camWrapper.classList.remove('hidden');
+        pPhoto.classList.remove('hidden');
         bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        subtitle.innerText = "Foto Lote (Multi-Scan)";
+        modeDesc.innerText = "Foto Lote (Enmarcar Códigos)";
+        laserLine.classList.add('hidden'); // Apagamos el láser rojo continuo
       } else {
-        sList.classList.remove('hidden');
+        // En la lista de seriales registrados: ocultamos la cámara para dar espacio a la tabla
+        camWrapper.classList.add('hidden');
+        pList.classList.remove('hidden');
         bList.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        subtitle.innerText = "Seriales Registrados";
+        modeDesc.innerText = "Seriales Guardados";
+        laserLine.classList.add('hidden');
       }
     }
 

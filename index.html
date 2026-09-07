@@ -3,10 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lector de Seriales - Inventario TI v0.2</title>
+  <title>Lector de Seriales - Inventario TI</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+  <script>
+    // OpenCV.js se auto-inicializa sobre este objeto "cv" cuando termina de cargar
+    // (patrón oficial de la librería). Es un archivo pesado (~8 MB), así que la app
+    // debe funcionar igual mientras carga y debe tener un respaldo si por algún
+    // motivo (sin internet, CDN caído) nunca llega a inicializar.
+    var openCvReady = false;
+    var cv = {
+      onRuntimeInitialized() {
+        openCvReady = true;
+        console.log('OpenCV.js listo');
+        if (typeof actualizarBadgeOpenCv === 'function') actualizarBadgeOpenCv();
+      }
+    };
+  </script>
+  <script async src="https://docs.opencv.org/4.9.0/opencv.js"></script>
   <style>
     #reader { width: 100% !important; border: none !important; background: transparent !important; }
     #reader video { border-radius: 0.75rem; object-fit: cover; width: 100% !important; max-height: 240px; }
@@ -204,6 +219,28 @@
           Vaciar Todo
         </button>
       </div>
+
+      <!-- SINCRONIZACIÓN CON GOOGLE SHEETS -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">🔗 Google Sheets</span>
+          <span id="sync-status-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Sin configurar</span>
+        </div>
+        <input
+          type="url"
+          id="sheets-url-input"
+          placeholder="Pega la URL del Web App de Apps Script"
+          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+        />
+        <button
+          id="btn-sync-sheets"
+          onclick="sincronizarConSheets()"
+          class="w-full bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-bold py-2 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2"
+        >
+          <span>☁️ Sincronizar con Google Sheets</span>
+        </button>
+      </div>
+
       <div id="items-container" class="space-y-1.5 max-h-[60vh] overflow-y-auto"></div>
     </section>
 
@@ -250,6 +287,7 @@
 
   <script>
     const STORAGE_KEY = 'inventario_html_seriales';
+    const SHEETS_URL_KEY = 'inv_sheets_webapp_url';
     let html5QrCode = null;
     let isProcessing = false;
     let isTorchOn = false;
@@ -295,8 +333,26 @@
     document.addEventListener('click', () => getAudioCtx(), { once: true });
 
     // --- LOCALSTORAGE ---
+    function generarId() {
+      return (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : (Date.now() + '_' + Math.random().toString(36).slice(2, 9));
+    }
+
     function getDatos() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { return []; }
+      try {
+        const items = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        // Migración silenciosa: los seriales guardados antes de tener sincronización
+        // no tienen "id" ni "synced". Se completan aquí para que la sync funcione
+        // también con datos ya existentes.
+        let cambiado = false;
+        items.forEach(it => {
+          if (!it.id) { it.id = generarId(); cambiado = true; }
+          if (typeof it.synced !== 'boolean') { it.synced = false; cambiado = true; }
+        });
+        if (cambiado) localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        return items;
+      } catch (e) { return []; }
     }
 
     function guardarDatos(items) {
@@ -312,13 +368,17 @@
       const container = document.getElementById('items-container');
       if (items.length === 0) {
         container.innerHTML = '<p class="text-xs text-slate-600 text-center py-6">No hay seriales guardados.</p>';
+        actualizarBadgeSync();
         return;
       }
 
       container.innerHTML = items.map((it, idx) => `
         <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex justify-between items-center text-xs">
           <div class="overflow-hidden mr-2">
-            <span class="font-mono font-bold text-emerald-400 text-sm">${it.serial}</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-mono font-bold text-emerald-400 text-sm">${it.serial}</span>
+              <span title="${it.synced ? 'Sincronizado con Sheets' : 'Pendiente de sincronizar'}" class="text-[11px]">${it.synced ? '☁️✅' : '☁️⏳'}</span>
+            </div>
             <p class="text-[11px] text-slate-400 truncate">${it.observacion || '<i class="text-slate-600">Sin nota</i>'}</p>
             <span class="text-[10px] text-slate-500 font-mono">${it.fecha}</span>
           </div>
@@ -329,6 +389,8 @@
           </button>
         </div>
       `).join('');
+
+      actualizarBadgeSync();
     }
 
     function eliminarItem(idx) {
@@ -336,6 +398,93 @@
       const borrado = items.splice(idx, 1);
       guardarDatos(items);
       showToast(`Eliminado: ${borrado[0].serial}`, "warn");
+    }
+
+    // =========================================================================
+    // --- SINCRONIZACIÓN CON GOOGLE SHEETS (vía Apps Script Web App) ---
+    // =========================================================================
+
+    function actualizarBadgeSync() {
+      const badge = document.getElementById('sync-status-badge');
+      if (!badge) return;
+      const url = localStorage.getItem(SHEETS_URL_KEY);
+
+      if (!url) {
+        badge.innerText = 'Sin configurar';
+        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400';
+        return;
+      }
+
+      const pendientes = getDatos().filter(i => !i.synced).length;
+      if (pendientes === 0) {
+        badge.innerText = 'Todo sincronizado';
+        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-400';
+      } else {
+        badge.innerText = `${pendientes} pendiente(s)`;
+        badge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 border border-amber-500/40 text-amber-400';
+      }
+    }
+
+    async function sincronizarConSheets() {
+      const urlInput = document.getElementById('sheets-url-input');
+      const url = urlInput.value.trim();
+
+      if (!url) {
+        showToast("Primero pega la URL del Web App de Apps Script", "warn", 2800);
+        return;
+      }
+      localStorage.setItem(SHEETS_URL_KEY, url);
+
+      const pendientes = getDatos().filter(i => !i.synced);
+      if (pendientes.length === 0) {
+        showToast("No hay seriales pendientes por sincronizar", "success", 1800);
+        actualizarBadgeSync();
+        return;
+      }
+
+      const btn = document.getElementById('btn-sync-sheets');
+      const contenidoOriginal = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳ Sincronizando...</span>';
+
+      try {
+        const payload = {
+          items: pendientes.map(i => ({
+            id: i.id, serial: i.serial, observacion: i.observacion || '', fecha: i.fecha
+          }))
+        };
+
+        // "text/plain" evita que el navegador dispare un preflight OPTIONS: Apps
+        // Script no lo maneja de forma nativa y eso provoca errores de CORS si se
+        // usa 'application/json' directamente.
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.error) || 'Respuesta inesperada del Web App');
+        }
+
+        const idsConfirmados = new Set(data.confirmados || pendientes.map(i => i.id));
+        const todos = getDatos();
+        todos.forEach(it => { if (idsConfirmados.has(it.id)) it.synced = true; });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+
+        soundSuccess();
+        if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+        showToast(`¡${idsConfirmados.size} serial(es) sincronizado(s)!`, "success", 2500);
+      } catch (err) {
+        console.error("Error de sincronización:", err);
+        showToast(`Error al sincronizar: ${err.message}`, "warn", 3800);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = contenidoOriginal;
+        renderizarLista();
+      }
     }
 
     function vaciarTodoConfirm() {
@@ -378,7 +527,7 @@
       const d = new Date();
       const fecha = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      items.unshift({ serial: limpio, observacion: obs, fecha: fecha });
+      items.unshift({ id: generarId(), serial: limpio, observacion: obs, fecha: fecha, synced: false });
       guardarDatos(items);
 
       if (!silencio) {
@@ -572,7 +721,200 @@
       return Math.round(fineBest * 10) / 10;
     }
 
+    // =========================================================================
+    // --- PIPELINE CON OPENCV.JS (deskew robusto + binarización + morfología) ---
+    // =========================================================================
+
+    // Corrige inclinación y binariza usando OpenCV: CLAHE para contraste parejo,
+    // minAreaRect sobre el mapa de bordes verticales para estimar el ángulo real
+    // (mucho más estable que comparar filas de píxeles a mano), warpAffine con
+    // interpolación cúbica sobre un lienzo ampliado (no recorta esquinas), y
+    // adaptiveThreshold + apertura/cierre morfológicos para limpiar el binarizado.
+    function preprocesarCanvasConCorreccionCV(srcCanvas) {
+      const src = cv.imread(srcCanvas);
+      const gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+      const clahe = new cv.CLAHE(3.0, new cv.Size(8, 8));
+      const equalized = new cv.Mat();
+      clahe.apply(gray, equalized);
+      clahe.delete();
+
+      // 1. Ángulo real vía minAreaRect sobre bordes verticales dilatados
+      const gradX = new cv.Mat();
+      cv.Sobel(equalized, gradX, cv.CV_16S, 1, 0, 3);
+      const gradAbs = new cv.Mat();
+      cv.convertScaleAbs(gradX, gradAbs);
+      gradX.delete();
+
+      const edgeMask = new cv.Mat();
+      cv.threshold(gradAbs, edgeMask, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      gradAbs.delete();
+
+      const kernelDilate = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(15, 3));
+      cv.dilate(edgeMask, edgeMask, kernelDilate);
+      kernelDilate.delete();
+
+      const points = new cv.Mat();
+      cv.findNonZero(edgeMask, points);
+      edgeMask.delete();
+
+      let angle = 0;
+      if (points.rows > 50) {
+        const rect = cv.minAreaRect(points);
+        let a = rect.angle;
+        if (rect.size.width < rect.size.height) a += 90;
+        if (a > 45) a -= 90;
+        if (a < -45) a += 90;
+        angle = a;
+      }
+      points.delete();
+
+      // 2. Rotar sobre un lienzo ampliado al bounding box de la rotación
+      const w = src.cols, h = src.rows;
+      const rad = (angle * Math.PI) / 180;
+      const cosA = Math.abs(Math.cos(rad)), sinA = Math.abs(Math.sin(rad));
+      const newW = Math.max(1, Math.ceil(w * cosA + h * sinA));
+      const newH = Math.max(1, Math.ceil(w * sinA + h * cosA));
+
+      const center = new cv.Point(w / 2, h / 2);
+      const M = cv.getRotationMatrix2D(center, angle, 1);
+      M.data64F[2] += (newW - w) / 2;
+      M.data64F[5] += (newH - h) / 2;
+
+      const rotated = new cv.Mat();
+      cv.warpAffine(equalized, rotated, M, new cv.Size(newW, newH), cv.INTER_CUBIC,
+        cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+      M.delete();
+      equalized.delete();
+
+      // 3. Binarización adaptativa (Gaussiana local) + apertura/cierre morfológicos
+      const blurred = new cv.Mat();
+      cv.GaussianBlur(rotated, blurred, new cv.Size(3, 3), 0);
+      rotated.delete();
+
+      let blockSize = Math.max(15, Math.floor(newW / 18));
+      if (blockSize % 2 === 0) blockSize += 1;
+
+      const binary = new cv.Mat();
+      cv.adaptiveThreshold(blurred, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, blockSize, 10);
+      blurred.delete();
+
+      const kOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(2, 2));
+      cv.morphologyEx(binary, binary, cv.MORPH_OPEN, kOpen);
+      kOpen.delete();
+
+      const kClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, 3));
+      cv.morphologyEx(binary, binary, cv.MORPH_CLOSE, kClose);
+      kClose.delete();
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = newW;
+      outCanvas.height = newH;
+      const outRgba = new cv.Mat();
+      cv.cvtColor(binary, outRgba, cv.COLOR_GRAY2RGBA);
+      cv.imshow(outCanvas, outRgba);
+
+      src.delete(); gray.delete(); binary.delete(); outRgba.delete();
+
+      return { canvasProcesado: outCanvas, anguloDetectado: Math.round(angle * 10) / 10 };
+    }
+
+    // Detecta regiones candidatas a código de barras mediante morfología: resalta
+    // bordes verticales, funde las barras de un mismo código en un blob con un
+    // cierre horizontal amplio, y filtra por proporción ancho/alto típica de un
+    // código 1D. Sirve para escanear zonas puntuales en vez de recorrer toda la
+    // imagen a ciegas, lo que ayuda especialmente cuando hay varios códigos.
+    function detectarRegionesCandidatasCV(canvas) {
+      if (!(openCvReady && typeof cv !== 'undefined' && cv.Mat)) return [];
+      try {
+        const src = cv.imread(canvas);
+        const gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        src.delete();
+
+        const gradX = new cv.Mat(), gradY = new cv.Mat();
+        cv.Sobel(gray, gradX, cv.CV_16S, 1, 0, 3);
+        cv.Sobel(gray, gradY, cv.CV_16S, 0, 1, 3);
+        gray.delete();
+        const absX = new cv.Mat(), absY = new cv.Mat();
+        cv.convertScaleAbs(gradX, absX);
+        cv.convertScaleAbs(gradY, absY);
+        gradX.delete(); gradY.delete();
+
+        const gradiente = new cv.Mat();
+        cv.subtract(absX, absY, gradiente); // resalta bordes predominantemente verticales
+        absX.delete(); absY.delete();
+
+        const blur = new cv.Mat();
+        cv.blur(gradiente, blur, new cv.Size(9, 9));
+        gradiente.delete();
+
+        const bin = new cv.Mat();
+        cv.threshold(blur, bin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+        blur.delete();
+
+        const kernelCierre = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(25, 9));
+        cv.morphologyEx(bin, bin, cv.MORPH_CLOSE, kernelCierre);
+        kernelCierre.delete();
+
+        const kernelSuaviza = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+        cv.erode(bin, bin, kernelSuaviza, new cv.Point(-1, -1), 2);
+        cv.dilate(bin, bin, kernelSuaviza, new cv.Point(-1, -1), 2);
+        kernelSuaviza.delete();
+
+        const contornos = new cv.MatVector();
+        const jerarquia = new cv.Mat();
+        cv.findContours(bin, contornos, jerarquia, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        bin.delete(); jerarquia.delete();
+
+        const W = canvas.width, H = canvas.height;
+        const minArea = W * H * 0.002;
+        const cajas = [];
+        for (let i = 0; i < contornos.size(); i++) {
+          const c = contornos.get(i);
+          const rect = cv.boundingRect(c);
+          c.delete();
+          const area = rect.width * rect.height;
+          if (area < minArea) continue;
+          const aspecto = rect.width / rect.height;
+          if (aspecto < 1.2 || aspecto > 15) continue; // un código 1D es más ancho que alto
+          const padX = Math.round(rect.width * 0.25);
+          const padY = Math.round(rect.height * 0.6);
+          const x = Math.max(0, rect.x - padX);
+          const y = Math.max(0, rect.y - padY);
+          cajas.push({
+            x, y,
+            w: Math.min(W - x, rect.width + padX * 2),
+            h: Math.min(H - y, rect.height + padY * 2)
+          });
+        }
+        contornos.delete();
+
+        cajas.sort((a, b) => (b.w * b.h) - (a.w * a.h));
+        return cajas.slice(0, 12);
+      } catch (e) {
+        console.error('detectarRegionesCandidatasCV falló:', e);
+        return [];
+      }
+    }
+
+    // Punto único de entrada: usa OpenCV si está listo, y si algo falla (o nunca
+    // cargó) cae automáticamente al pipeline manual en JS puro.
     function preprocesarCanvasConCorreccion(srcCanvas) {
+      if (openCvReady && typeof cv !== 'undefined' && cv.Mat) {
+        try {
+          return preprocesarCanvasConCorreccionCV(srcCanvas);
+        } catch (e) {
+          console.error('Pipeline OpenCV falló, usando respaldo JS:', e);
+        }
+      }
+      return preprocesarCanvasConCorreccionJS(srcCanvas);
+    }
+
+    // --- RESPALDO (sin OpenCV): el mismo pipeline manual de la versión anterior,
+    // se usa solo si OpenCV.js no llegó a inicializar (sin internet, CDN caído, etc.)
+    function preprocesarCanvasConCorreccionJS(srcCanvas) {
       const w = srcCanvas.width;
       const h = srcCanvas.height;
 
@@ -856,6 +1198,31 @@
           // Escanear completo binarizado y original
           await scanRegion(canvasProcesadoGlobal);
           await scanRegion(rawCanvas);
+
+          // PASO RÁPIDO: regiones candidatas detectadas por morfología con OpenCV.
+          // Suele encontrar la mayoría de los códigos con muy pocos recortes,
+          // antes de recurrir a la malla sistemática (más lenta pero exhaustiva).
+          const regionesCandidatas = detectarRegionesCandidatasCV(rawCanvas);
+          for (const f of regionesCandidatas) {
+            const subRaw = document.createElement('canvas');
+            subRaw.width = f.w; subRaw.height = f.h;
+            subRaw.getContext('2d').drawImage(rawCanvas, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+            await scanRegion(subRaw, f.x, f.y);
+
+            const resLocal = await intentarDecodificarConDeskewLocal(subRaw);
+            for (const b of resLocal) {
+              const limpio = limpiarSerial(b.rawValue);
+              if (!limpio || /^\d{12}$/.test(limpio)) continue;
+              const box = {
+                x: Math.round(b.boundingBox.x + f.x), y: Math.round(b.boundingBox.y + f.y),
+                w: Math.round(b.boundingBox.width), h: Math.round(b.boundingBox.height)
+              };
+              const key = `${limpio}_${Math.round(box.x / 30)}_${Math.round(box.y / 30)}`;
+              if (!detectadosMap.has(key)) {
+                detectadosMap.set(key, { id: detectadosMap.size, raw: b.rawValue, serial: limpio, format: b.format, box, selected: true });
+              }
+            }
+          }
 
           // Malla sistemática con solape (reemplaza las 5 franjas fijas): escala con
           // el tamaño real de la imagen y cubre todo el cuadro sin huecos.
@@ -1315,9 +1682,18 @@
       localStorage.setItem('inv_html_obs', e.target.value);
     });
 
+    document.getElementById('sheets-url-input').addEventListener('change', e => {
+      localStorage.setItem(SHEETS_URL_KEY, e.target.value.trim());
+      actualizarBadgeSync();
+    });
+
     window.addEventListener('DOMContentLoaded', () => {
       const savedObs = localStorage.getItem('inv_html_obs');
       if (savedObs) document.getElementById('obs-input').value = savedObs;
+
+      const savedSheetsUrl = localStorage.getItem(SHEETS_URL_KEY);
+      if (savedSheetsUrl) document.getElementById('sheets-url-input').value = savedSheetsUrl;
+
       renderizarLista();
       iniciarCamaraDirecta();
     });

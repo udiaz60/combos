@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lector de Seriales - Inventario TI</title>
+  <title>Lector de Seriales - Inventario TI v0.2</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
@@ -514,37 +514,62 @@
     // --- PIPELINE DE IMAGEN (DESKEW + BINARIZACIÓN OTSU + FILTRO MORFOLÓGICO) ---
     // =========================================================================
 
+    // Estima el ángulo de inclinación mediante "projection profile" sobre el gradiente
+    // horizontal (Sobel Gx). Las barras de un código 128/39 son básicamente líneas
+    // verticales: si se acumula la magnitud del gradiente a lo largo de una línea
+    // inclinada un ángulo θ y se repite para cada columna, el ángulo que produce la
+    // mayor varianza entre columnas es aquel donde las barras quedan realmente
+    // verticales (alineadas). Esto es mucho más robusto que comparar unas pocas filas
+    // sueltas, y funciona igual de bien con inclinaciones de ±20°.
     function estimarAnguloInclinacion(gray, width, height) {
-      const stepY = Math.floor(height / 6);
-      let bestAngle = 0;
-      let maxVariance = 0;
-
-      for (let deg = -16; deg <= 16; deg += 2) {
-        const rad = (deg * Math.PI) / 180;
-        const tan = Math.tan(rad);
-        let varianceSum = 0;
-
-        for (let yIndex = 2; yIndex <= 4; yIndex++) {
-          const cy = yIndex * stepY;
-          let prevVal = 0;
-          let diffSum = 0;
-          for (let x = 15; x < width - 15; x += 3) {
-            const shiftY = Math.round(cy + (x - width / 2) * tan);
-            if (shiftY >= 0 && shiftY < height) {
-              const val = gray[shiftY * width + x];
-              diffSum += Math.abs(val - prevVal);
-              prevVal = val;
-            }
-          }
-          varianceSum += diffSum;
-        }
-
-        if (varianceSum > maxVariance) {
-          maxVariance = varianceSum;
-          bestAngle = deg;
+      const grad = new Float32Array(width * height);
+      for (let y = 1; y < height - 1; y++) {
+        const rowP = (y - 1) * width, rowC = y * width, rowN = (y + 1) * width;
+        for (let x = 1; x < width - 1; x++) {
+          const gx =
+            -gray[rowP + x - 1] + gray[rowP + x + 1] +
+            -2 * gray[rowC + x - 1] + 2 * gray[rowC + x + 1] +
+            -gray[rowN + x - 1] + gray[rowN + x + 1];
+          grad[rowC + x] = Math.abs(gx);
         }
       }
-      return bestAngle;
+
+      function varianzaEnAngulo(deg, xStep, yStep) {
+        const tan = Math.tan((deg * Math.PI) / 180);
+        const sums = [];
+        for (let x = 0; x < width; x += xStep) {
+          let acc = 0;
+          for (let y = 0; y < height; y += yStep) {
+            const shiftX = Math.round(x + (y - height / 2) * tan);
+            if (shiftX >= 0 && shiftX < width) acc += grad[y * width + shiftX];
+          }
+          sums.push(acc);
+        }
+        let n = 0, mean = 0, m2 = 0;
+        for (const s of sums) {
+          n++;
+          const delta = s - mean;
+          mean += delta / n;
+          m2 += delta * (s - mean);
+        }
+        return n > 1 ? m2 / (n - 1) : 0;
+      }
+
+      // Pasada gruesa (-20° a 20°) para ubicar la zona correcta
+      let bestAngle = 0, bestVar = -1;
+      for (let deg = -20; deg <= 20; deg += 2) {
+        const v = varianzaEnAngulo(deg, 2, 2);
+        if (v > bestVar) { bestVar = v; bestAngle = deg; }
+      }
+
+      // Pasada fina alrededor del mejor candidato, con resolución de 0.25°
+      let fineBest = bestAngle, fineVar = -1;
+      for (let deg = bestAngle - 1.75; deg <= bestAngle + 1.75; deg += 0.25) {
+        const v = varianzaEnAngulo(deg, 1, 1);
+        if (v > fineVar) { fineVar = v; fineBest = deg; }
+      }
+
+      return Math.round(fineBest * 10) / 10;
     }
 
     function preprocesarCanvasConCorreccion(srcCanvas) {
@@ -565,69 +590,118 @@
 
       const angle = estimarAnguloInclinacion(grayInit, w, h);
 
+      // Lienzo AMPLIADO al bounding box de la imagen rotada: si no se agranda, al
+      // rotar se recortan las esquinas y con ellas los códigos que estaban cerca
+      // del borde del encuadre (una de las causas de "solo detecta algunos códigos").
+      const rad = (angle * Math.PI) / 180;
+      const cosA = Math.abs(Math.cos(rad));
+      const sinA = Math.abs(Math.sin(rad));
+      const W = Math.ceil(w * cosA + h * sinA);
+      const H = Math.ceil(w * sinA + h * cosA);
+
       const rectCanvas = document.createElement('canvas');
-      rectCanvas.width = w;
-      rectCanvas.height = h;
+      rectCanvas.width = W;
+      rectCanvas.height = H;
       const rectCtx = rectCanvas.getContext('2d', { willReadFrequently: true });
+      // Suavizado de alta calidad durante la rotación: reduce el aliasing que
+      // introduce el remuestreo (antes se dejaba en su valor por defecto y además
+      // se deformaban las proporciones con un scale(1.05, 1.0) que rompía la
+      // relación de anchos de barra que necesita el decodificador).
+      rectCtx.imageSmoothingEnabled = true;
+      rectCtx.imageSmoothingQuality = 'high';
 
       rectCtx.save();
-      rectCtx.translate(w / 2, h / 2);
-      if (Math.abs(angle) >= 2) rectCtx.rotate((-angle * Math.PI) / 180);
-      rectCtx.scale(1.05, 1.0);
+      rectCtx.translate(W / 2, H / 2);
+      if (Math.abs(angle) >= 0.3) rectCtx.rotate((-angle * Math.PI) / 180);
       rectCtx.drawImage(srcCanvas, -w / 2, -h / 2);
       rectCtx.restore();
 
-      const imgData = rectCtx.getImageData(0, 0, w, h);
+      const imgData = rectCtx.getImageData(0, 0, W, H);
       const data = imgData.data;
-      const gray = new Uint8Array(w * h);
+      const gray = new Uint8Array(W * H);
 
       for (let i = 0, j = 0; i < data.length; i += 4, j++) {
         gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
       }
 
-      // Enfoque 3x3
-      const sharpened = new Uint8Array(w * h);
-      for (let y = 1; y < h - 1; y++) {
-        const rowP = (y - 1) * w, rowC = y * w, rowN = (y + 1) * w;
-        for (let x = 1; x < w - 1; x++) {
-          const val = 5 * gray[rowC + x] - gray[rowP + x] - gray[rowN + x] - gray[rowC + x - 1] - gray[rowC + x + 1];
-          sharpened[rowC + x] = val < 0 ? 0 : (val > 255 ? 255 : val);
+      // Suavizado leve 3x3 (box blur) ANTES de calcular el umbral: sirve solo para
+      // estimar la media/desviación local sin que el ruido de remuestreo de la
+      // rotación se cuele en el umbral. El valor que se binariza sigue siendo el
+      // original (gray), no el difuminado, así los bordes de barra no pierden nitidez.
+      const blurred = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) {
+        const yP = Math.max(0, y - 1), yN = Math.min(H - 1, y + 1);
+        for (let x = 0; x < W; x++) {
+          const xP = Math.max(0, x - 1), xN = Math.min(W - 1, x + 1);
+          const sum =
+            gray[yP * W + xP] + gray[yP * W + x] + gray[yP * W + xN] +
+            gray[y * W + xP] + gray[y * W + x] * 4 + gray[y * W + xN] +
+            gray[yN * W + xP] + gray[yN * W + x] + gray[yN * W + xN];
+          blurred[y * W + x] = sum / 12;
         }
       }
 
-      // Binarización Adaptativa Integral
-      const S = Math.max(16, Math.floor(w / 18));
-      const T = 0.12;
-      const binary = new Uint8Array(w * h);
-      const integral = new Uint32Array(w * h);
-
-      for (let y = 0; y < h; y++) {
-        let sum = 0;
-        const offset = y * w;
-        for (let x = 0; x < w; x++) {
-          sum += sharpened[offset + x];
-          integral[offset + x] = (y === 0 ? 0 : integral[offset - w + x]) + sum;
-        }
-      }
-
+      // Umbral adaptativo tipo Sauvola (media + desviación estándar local), más
+      // robusto ante iluminación despareja que un umbral basado solo en la media.
+      const S = Math.max(16, Math.floor(W / 18));
+      const k = 0.28;
+      const R = 128;
       const s2 = S >> 1;
-      for (let y = 0; y < h; y++) {
-        const y1 = Math.max(0, y - s2), y2 = Math.min(h - 1, y + s2), row = y * w;
-        for (let x = 0; x < w; x++) {
-          const x1 = Math.max(0, x - s2), x2 = Math.min(w - 1, x + s2);
-          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
-          const sum = integral[y2 * w + x2] - integral[y1 * w + x2] - integral[y2 * w + x1] + integral[y1 * w + x1];
-          binary[row + x] = (sharpened[row + x] * count <= sum * (1 - T)) ? 0 : 255;
+
+      const integral = new Float64Array(W * H);
+      const integralSq = new Float64Array(W * H);
+      for (let y = 0; y < H; y++) {
+        let sum = 0, sumSq = 0;
+        const offset = y * W;
+        for (let x = 0; x < W; x++) {
+          const v = blurred[offset + x];
+          sum += v;
+          sumSq += v * v;
+          integral[offset + x] = (y === 0 ? 0 : integral[offset - W + x]) + sum;
+          integralSq[offset + x] = (y === 0 ? 0 : integralSq[offset - W + x]) + sumSq;
         }
       }
 
-      // Cierre morfológico vertical 1D
-      const repaired = new Uint8Array(w * h);
-      repaired.set(binary);
-      for (let y = 1; y < h - 1; y++) {
-        const rowP = (y - 1) * w, rowC = y * w, rowN = (y + 1) * w;
-        for (let x = 0; x < w; x++) {
-          if (binary[rowC + x] === 255 && binary[rowP + x] === 0 && binary[rowN + x] === 0) {
+      const binary = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) {
+        const y1 = Math.max(0, y - s2), y2 = Math.min(H - 1, y + s2), row = y * W;
+        for (let x = 0; x < W; x++) {
+          const x1 = Math.max(0, x - s2), x2 = Math.min(W - 1, x + s2);
+          const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+          const sum = integral[y2 * W + x2] - integral[y1 * W + x2] - integral[y2 * W + x1] + integral[y1 * W + x1];
+          const sumSq = integralSq[y2 * W + x2] - integralSq[y1 * W + x2] - integralSq[y2 * W + x1] + integralSq[y1 * W + x1];
+          const mean = sum / count;
+          const variance = Math.max(0, sumSq / count - mean * mean);
+          const stdDev = Math.sqrt(variance);
+          const threshold = mean * (1 + k * (stdDev / R - 1));
+          binary[row + x] = gray[row + x] <= threshold ? 0 : 255;
+        }
+      }
+
+      // Apertura morfológica: elimina píxeles negros aislados (ruido sal-y-pimienta
+      // típico del "sierra" en bordes diagonales) sin erosionar barras reales, que
+      // siempre tienen vecinos negros contiguos.
+      const opened = new Uint8Array(W * H);
+      opened.set(binary);
+      for (let y = 1; y < H - 1; y++) {
+        const rowP = (y - 1) * W, rowC = y * W, rowN = (y + 1) * W;
+        for (let x = 1; x < W - 1; x++) {
+          if (binary[rowC + x] === 0) {
+            const vecinosNegros =
+              (binary[rowC + x - 1] === 0 ? 1 : 0) + (binary[rowC + x + 1] === 0 ? 1 : 0) +
+              (binary[rowP + x] === 0 ? 1 : 0) + (binary[rowN + x] === 0 ? 1 : 0);
+            if (vecinosNegros === 0) opened[rowC + x] = 255;
+          }
+        }
+      }
+
+      // Cierre morfológico vertical 1D (repara micro-huecos dentro de una barra)
+      const repaired = new Uint8Array(W * H);
+      repaired.set(opened);
+      for (let y = 1; y < H - 1; y++) {
+        const rowP = (y - 1) * W, rowC = y * W, rowN = (y + 1) * W;
+        for (let x = 0; x < W; x++) {
+          if (opened[rowC + x] === 255 && opened[rowP + x] === 0 && opened[rowN + x] === 0) {
             repaired[rowC + x] = 0;
           }
         }
@@ -643,6 +717,53 @@
       rectCtx.putImageData(imgData, 0, 0);
 
       return { canvasProcesado: rectCanvas, anguloDetectado: angle };
+    }
+
+    // =========================================================================
+    // --- MALLA DE TILES CON SOLAPE (reemplaza las 5 franjas fijas) ---
+    // =========================================================================
+
+    // Genera una malla sistemática de recortes solapados que cubre toda la imagen.
+    // A diferencia de una lista fija de 5 franjas, escala sola con el tamaño de la
+    // imagen y garantiza que ningún código quede completamente fuera de un recorte
+    // (con 5 franjas ad-hoc, códigos pequeños ubicados en ciertas zonas del cuadro
+    // simplemente nunca entraban completos en ninguna franja).
+    function generarMallaTiles(W, H) {
+      const cols = 3, rows = 3;
+      const overlap = 0.22; // 22% de solape entre celdas vecinas
+      const tileW = W / (cols - (cols - 1) * overlap);
+      const tileH = H / (rows - (rows - 1) * overlap);
+      const stepX = tileW * (1 - overlap);
+      const stepY = tileH * (1 - overlap);
+
+      const tiles = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const x = Math.max(0, Math.round(Math.min(W - tileW, c * stepX)));
+          const y = Math.max(0, Math.round(Math.min(H - tileH, r * stepY)));
+          tiles.push({ x, y, w: Math.round(tileW), h: Math.round(tileH) });
+        }
+      }
+      // Recorte central amplio adicional: cubre códigos que quedan justo a caballo
+      // entre dos celdas de la malla.
+      tiles.push({ x: Math.round(W * 0.15), y: Math.round(H * 0.15), w: Math.round(W * 0.7), h: Math.round(H * 0.7) });
+      return tiles;
+    }
+
+    // Reintenta la decodificación de un recorte aplicándole SU PROPIO deskew local,
+    // en vez de depender del ángulo global calculado para toda la foto. Esto es
+    // clave cuando hay varios códigos en la imagen: cada objeto puede tener una
+    // inclinación distinta, y una única rotación global solo "endereza" a los que
+    // comparten ese ángulo (a los demás incluso los deja peor).
+    async function intentarDecodificarConDeskewLocal(cropCanvas) {
+      if (!('BarcodeDetector' in window)) return [];
+      try {
+        const { canvasProcesado } = preprocesarCanvasConCorreccion(cropCanvas);
+        const detectorLocal = new BarcodeDetector({ formats: ['code_128', 'code_39'] });
+        return await detectorLocal.detect(canvasProcesado);
+      } catch (e) {
+        return [];
+      }
     }
 
     // =========================================================================
@@ -736,21 +857,56 @@
           await scanRegion(canvasProcesadoGlobal);
           await scanRegion(rawCanvas);
 
-          // Escanear franjas superpuestas (crucial para capturar varios códigos pequeños contiguos)
+          // Malla sistemática con solape (reemplaza las 5 franjas fijas): escala con
+          // el tamaño real de la imagen y cubre todo el cuadro sin huecos.
           const W = img.width, H = img.height;
-          const franjas = [
-            { x: 0, y: 0, w: Math.round(W * 0.55), h: H },
-            { x: Math.round(W * 0.45), y: 0, w: Math.round(W * 0.55), h: H },
-            { x: 0, y: 0, w: W, h: Math.round(H * 0.55) },
-            { x: 0, y: Math.round(H * 0.45), w: W, h: Math.round(H * 0.55) },
-            { x: Math.round(W * 0.2), y: Math.round(H * 0.2), w: Math.round(W * 0.6), h: Math.round(H * 0.6) }
-          ];
+          const tiles = generarMallaTiles(W, H);
 
-          for (const f of franjas) {
-            const sub = document.createElement('canvas');
-            sub.width = f.w; sub.height = f.h;
-            sub.getContext('2d').drawImage(canvasProcesadoGlobal, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
-            await scanRegion(sub, f.x, f.y);
+          for (const f of tiles) {
+            const subProc = document.createElement('canvas');
+            subProc.width = f.w; subProc.height = f.h;
+            subProc.getContext('2d').drawImage(canvasProcesadoGlobal, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+            await scanRegion(subProc, f.x, f.y);
+
+            const subRaw = document.createElement('canvas');
+            subRaw.width = f.w; subRaw.height = f.h;
+            subRaw.getContext('2d').drawImage(rawCanvas, f.x, f.y, f.w, f.h, 0, 0, f.w, f.h);
+            await scanRegion(subRaw, f.x, f.y);
+          }
+
+          // Segundo paso: deskew LOCAL por zona. La corrección global de ángulo solo
+          // beneficia a los códigos que comparten esa inclinación; con varios objetos
+          // en la foto, cada uno puede estar girado de forma distinta. Aquí se recorta
+          // cada zona (con margen extra para no cortar el código si su ángulo real
+          // difiere del global) y se le calcula y aplica SU PROPIO ángulo.
+          stepText.innerText = "Afinando inclinación por zonas...";
+          for (const f of tiles) {
+            const mgX = Math.round(f.w * 0.15), mgY = Math.round(f.h * 0.15);
+            const rx = Math.max(0, f.x - mgX), ry = Math.max(0, f.y - mgY);
+            const rw = Math.min(W - rx, f.w + mgX * 2), rh = Math.min(H - ry, f.h + mgY * 2);
+
+            const cropLocal = document.createElement('canvas');
+            cropLocal.width = rw; cropLocal.height = rh;
+            cropLocal.getContext('2d').drawImage(rawCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+
+            const resLocal = await intentarDecodificarConDeskewLocal(cropLocal);
+            for (const b of resLocal) {
+              const limpio = limpiarSerial(b.rawValue);
+              if (!limpio || /^\d{12}$/.test(limpio)) continue;
+              const box = {
+                x: Math.round(b.boundingBox.x + rx),
+                y: Math.round(b.boundingBox.y + ry),
+                w: Math.round(b.boundingBox.width),
+                h: Math.round(b.boundingBox.height)
+              };
+              const key = `${limpio}_${Math.round(box.x / 30)}_${Math.round(box.y / 30)}`;
+              if (!detectadosMap.has(key)) {
+                detectadosMap.set(key, {
+                  id: detectadosMap.size, raw: b.rawValue, serial: limpio,
+                  format: b.format, box, selected: true
+                });
+              }
+            }
           }
         }
 

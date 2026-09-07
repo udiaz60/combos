@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lector de Seriales - Inventario TI v1</title>
+  <title>v1.1 Lector de Seriales - Inventario TI</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
@@ -12,7 +12,6 @@
     #reader__scan_region { background: transparent !important; }
     #reader__dashboard_section_csr span, #reader__status_span { display: none !important; }
 
-    /* Láser de enfoque: SOLO se muestra cuando la cámara está transmitiendo */
     .laser-line {
       position: absolute; top: 50%; left: 8%; right: 8%; height: 2px;
       background: rgba(16, 185, 129, 0.85); box-shadow: 0 0 10px rgba(16, 185, 129, 1);
@@ -37,7 +36,7 @@
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
       <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
-      <p class="text-[11px] text-emerald-400 font-semibold">Solo Serial (Code 128 / 39)</p>
+      <p class="text-[11px] text-emerald-400 font-semibold" id="header-subtitle">Solo Serial (Code 128 / 39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
       0 seriales
@@ -47,7 +46,7 @@
   <!-- Contenedor Principal -->
   <main class="flex-1 p-3 pb-24 overflow-y-auto space-y-3 max-w-md mx-auto w-full">
     
-    <!-- PESTAÑA 1: ESCÁNER -->
+    <!-- PESTAÑA 1: ESCÁNER EN VIVO (Tu código base intacto) -->
     <section id="tab-scan" class="space-y-3">
       
       <!-- Observación Fija -->
@@ -66,10 +65,8 @@
       <!-- Visor de Cámara -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-1 relative shadow-inner min-h-[180px] flex items-center justify-center">
         <div id="reader"></div>
-        <!-- Línea láser oculta por defecto para que nunca tape los mensajes de error -->
         <div id="laser-line" class="laser-line hidden"></div>
         
-        <!-- Panel de Estado / Botón de Permisos si falla -->
         <div id="cam-status" class="p-6 text-center text-xs space-y-3 z-20">
           <p id="cam-msg" class="text-slate-400 leading-relaxed">Iniciando cámara trasera...</p>
           <button id="btn-permiso" onclick="iniciarCamaraDirecta()" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-lg active:scale-95 transition-all">
@@ -118,7 +115,66 @@
       </div>
     </section>
 
-    <!-- PESTAÑA 2: LISTA DE ESCANEADOS -->
+    <!-- PESTAÑA 2: FOTO MULTI-SCAN (NUEVA CAPACIDAD DE ENMARCADO Y SELECCIÓN) -->
+    <section id="tab-photo" class="hidden space-y-3">
+      
+      <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-2">
+        <p class="text-xs text-slate-300 font-semibold">Toma o sube una foto con varios códigos.</p>
+        <p class="text-[11px] text-slate-500">Se detectarán todos y podrás marcar con un toque los que deseas registrar.</p>
+        
+        <div class="flex gap-2 pt-1">
+          <!-- Capturar frame actual del visor si la cámara está activa -->
+          <button onclick="capturarDesdeVideo()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors">
+            <span>⚡</span> Congelar Cámara
+          </button>
+          
+          <!-- Tomar foto nativa de alta resolución con la app de cámara del móvil -->
+          <label class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer text-center transition-colors">
+            <span>📷</span> Tomar Foto HD
+            <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="procesarArchivoFoto(event)">
+          </label>
+        </div>
+      </div>
+
+      <!-- Contenedor Interactivo con Canvas para enmarcar -->
+      <div id="photo-preview-card" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-2 space-y-3">
+        <div class="relative overflow-hidden rounded-lg border border-slate-700 bg-black flex justify-center items-center">
+          <!-- Canvas interactivo donde se pinta la foto y los marcos tocables -->
+          <canvas id="photo-canvas" class="max-w-full h-auto cursor-pointer block"></canvas>
+          <div id="photo-loading-overlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-xs text-emerald-400 gap-2">
+            <svg class="animate-spin h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            Analizando códigos en la imagen...
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs text-slate-400">Toca el recuadro sobre la imagen o en la lista:</span>
+          <button onclick="marcarTodos(true)" class="text-[11px] text-indigo-400 hover:underline">Marcar todos</button>
+        </div>
+
+        <!-- Lista de códigos detectados con switch individual -->
+        <div id="detected-checkboxes-list" class="space-y-1.5 max-h-44 overflow-y-auto pr-1"></div>
+
+        <!-- Botón de Confirmación para Registrar el Lote -->
+        <button 
+          id="btn-confirmar-lote" 
+          onclick="importarCodigosSeleccionados()" 
+          disabled
+          class="w-full bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg flex items-center justify-center gap-2"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          <span id="btn-confirm-text">Registrar 0 Códigos Seleccionados</span>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- PESTAÑA 3: LISTA DE ESCANEADOS -->
     <section id="tab-list" class="hidden space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Seriales en Memoria Local</h2>
@@ -131,13 +187,20 @@
 
   </main>
 
-  <!-- Navegación Inferior -->
+  <!-- Navegación Inferior (3 Pestañas) -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-30">
     <button id="btn-nav-scan" onclick="switchNav('scan')" class="flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
       </svg>
       Escáner
+    </button>
+    <button id="btn-nav-photo" onclick="switchNav('photo')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      Foto Lote
     </button>
     <button id="btn-nav-list" onclick="switchNav('list')" class="flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs">
       <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,6 +217,10 @@
     let isTorchOn = false;
     let lastCode = '';
     let lastTime = 0;
+
+    // Estado del analizador de foto estática
+    let imagenActual = null;
+    let codigosDetectados = []; // Array de: { raw, serial, box: {x,y,w,h}, format, selected: bool }
 
     // --- AUDIO SINTETIZADO ---
     let audioCtx = null;
@@ -244,23 +311,25 @@
       return s;
     }
 
-    function registrarSerial(serialBruto) {
+    function registrarSerial(serialBruto, silencio = false) {
       const limpio = limpiarSerial(serialBruto);
-      if (!limpio) return;
+      if (!limpio) return false;
 
-      // Ignorar si lee el código UPC comercial de 12 dígitos
+      // Si es el UPC de 12 dígitos, ignorarlo
       if (/^\d{12}$/.test(limpio)) {
-        showToast("UPC comercial ignorado", "warn", 1200);
-        return;
+        if (!silencio) showToast("UPC comercial ignorado", "warn", 1200);
+        return false;
       }
 
       const items = getDatos();
       const existe = items.some(i => i.serial.toUpperCase() === limpio.toUpperCase());
       if (existe) {
-        soundDuplicate();
-        if (navigator.vibrate) navigator.vibrate([70, 50, 70]);
-        showToast(`Ya existe: ${limpio}`, "warn");
-        return;
+        if (!silencio) {
+          soundDuplicate();
+          if (navigator.vibrate) navigator.vibrate([70, 50, 70]);
+          showToast(`Ya existe: ${limpio}`, "warn");
+        }
+        return false;
       }
 
       const obs = document.getElementById('obs-input').value;
@@ -270,9 +339,12 @@
       items.unshift({ serial: limpio, observacion: obs, fecha: fecha });
       guardarDatos(items);
 
-      soundSuccess();
-      if (navigator.vibrate) navigator.vibrate(50);
-      showToast(`OK: ${limpio}`, "success");
+      if (!silencio) {
+        soundSuccess();
+        if (navigator.vibrate) navigator.vibrate(50);
+        showToast(`OK: ${limpio}`, "success");
+      }
+      return true;
     }
 
     function agregarManual() {
@@ -306,7 +378,7 @@
       }
     }
 
-    // --- CÁMARA (INICIALIZACIÓN DIRECTA SIN BLOQUEOS) ---
+    // --- CÁMARA EN VIVO ---
     function onScanSuccess(decodedText) {
       const raw = String(decodedText || '').trim();
       if (!raw) return;
@@ -334,7 +406,6 @@
 
       try {
         if (!html5QrCode) {
-          // Solo formatos de serial: Code 128 y Code 39
           html5QrCode = new Html5Qrcode("reader", {
             formatsToSupport: [
               Html5QrcodeSupportedFormats.CODE_128,
@@ -345,7 +416,6 @@
           });
         }
 
-        // Mira estrecha horizontal para calzar el serial
         const scanConfig = { 
           fps: 24, 
           qrbox: (w, h) => {
@@ -355,34 +425,32 @@
           }
         };
 
-        // Solicitar cámara trasera sin forzar anchos rígidos
         await html5QrCode.start(
           { facingMode: "environment" },
           scanConfig,
           onScanSuccess
         );
 
-        // Si arranca con éxito: ocultar aviso y encender la línea láser
         statusBox.classList.add('hidden');
         laserLine.classList.remove('hidden');
         verificarCapacidadesCamara();
 
       } catch (err) {
         console.error("Error cámara:", err);
-        laserLine.classList.add('hidden'); // Asegurar que el láser esté apagado
+        laserLine.classList.add('hidden');
         btnPermiso.classList.remove('hidden');
 
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           msgEl.innerHTML = `
             <span class="text-rose-400 font-bold text-sm block mb-1">Permiso Denegado</span>
-            1. Toca el icono de <b>ajustes / candado 🔒</b> junto al link.<br>
-            2. Cambia <b>Cámara</b> a <b>Permitir</b>.<br>
+            1. Toca el candado 🔒 junto a la URL.<br>
+            2. Cambia Cámara a Permitir.<br>
             3. Luego toca el botón de abajo:
           `;
         } else {
           msgEl.innerHTML = `
             <span class="text-amber-400 font-bold block mb-1">No se pudo abrir la cámara</span>
-            Si abriste desde WhatsApp, toca los 3 puntos arriba y elige <b>"Abrir en Chrome"</b>.
+            Si abriste desde WhatsApp, toca los 3 puntos arriba y elige "Abrir en Chrome".
           `;
         }
       }
@@ -418,6 +486,278 @@
       }).catch(() => {});
     }
 
+    // =========================================================================
+    // --- NUEVO MÓDULO: FOTO MULTI-SCAN (ENMARCADO Y SELECCIÓN MÚLTIPLE) ---
+    // =========================================================================
+
+    // 1. Captura de un frame congelado desde el stream de video existente
+    function capturarDesdeVideo() {
+      const videoEl = document.querySelector("#reader video");
+      if (!videoEl || videoEl.videoWidth === 0) {
+        showToast("Inicia la cámara primero", "warn");
+        switchNav('scan');
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = videoEl.videoWidth;
+      canvas.height = videoEl.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+      const img = new Image();
+      img.onload = () => procesarImagenParaMultiScan(img);
+      img.src = canvas.toDataURL("image/jpeg", 0.95);
+    }
+
+    // 2. Carga de imagen desde archivo o foto tomada con la app de cámara
+    function procesarArchivoFoto(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => procesarImagenParaMultiScan(img);
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 3. Procesamiento y detección de todos los códigos en la imagen
+    async function procesarImagenParaMultiScan(img) {
+      imagenActual = img;
+      document.getElementById('photo-preview-card').classList.remove('hidden');
+      const overlay = document.getElementById('photo-loading-overlay');
+      overlay.classList.remove('hidden');
+
+      codigosDetectados = [];
+
+      try {
+        // Opción A: API nativa BarcodeDetector (Soporta múltiples códigos y entrega boundingBox exacto)
+        if ('BarcodeDetector' in window) {
+          const detector = new BarcodeDetector({ 
+            formats: ['code_128', 'code_39', 'upc_a', 'ean_13', 'qr_code'] 
+          });
+          const barcodes = await detector.detect(img);
+
+          codigosDetectados = barcodes.map((b, i) => {
+            const limpio = limpiarSerial(b.rawValue);
+            const esUPC = /^\d{12}$/.test(limpio) || b.format === 'upc_a';
+            return {
+              id: i,
+              raw: b.rawValue,
+              serial: limpio,
+              format: b.format,
+              box: {
+                x: b.boundingBox.x,
+                y: b.boundingBox.y,
+                w: b.boundingBox.width,
+                h: b.boundingBox.height
+              },
+              // Seleccionado por defecto SOLO si es un serial y NO un UPC comercial
+              selected: !esUPC
+            };
+          });
+        } 
+        
+        // Opción B: Fallback con html5-qrcode scanFile si BarcodeDetector no está en el navegador
+        if (codigosDetectados.length === 0 && html5QrCode) {
+          try {
+            // scanFile procesa la imagen entera
+            const tempFile = dataURLtoFile(img.src, "temp.jpg");
+            const res = await html5QrCode.scanFile(tempFile, false);
+            const limpio = limpiarSerial(res);
+            codigosDetectados.push({
+              id: 0,
+              raw: res,
+              serial: limpio,
+              format: 'CODE_128',
+              box: { x: img.width * 0.15, y: img.height * 0.35, w: img.width * 0.7, h: img.height * 0.3 },
+              selected: true
+            });
+          } catch (e) {
+            // No se detectó con el motor fallback
+          }
+        }
+
+      } catch (err) {
+        console.error("Error al detectar en foto:", err);
+      } finally {
+        overlay.classList.add('hidden');
+        redibujarCanvasFoto();
+        renderizarListaCodigosDetectados();
+
+        if (codigosDetectados.length === 0) {
+          showToast("No se detectaron códigos", "warn", 2000);
+        } else {
+          showToast(`${codigosDetectados.length} código(s) detectado(s)`, "success", 1500);
+        }
+      }
+    }
+
+    function dataURLtoFile(dataurl, filename) {
+      const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while(n--) u8arr[n] = bstr.charCodeAt(n);
+      return new File([u8arr], filename, {type:mime});
+    }
+
+    // 4. Dibujar foto y enmarcado interactivo en el Canvas
+    function redibujarCanvasFoto() {
+      if (!imagenActual) return;
+      const canvas = document.getElementById('photo-canvas');
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = imagenActual.width;
+      canvas.height = imagenActual.height;
+
+      // Dibujar foto base
+      ctx.drawImage(imagenActual, 0, 0);
+
+      // Dibujar recuadros para cada código detectado
+      codigosDetectados.forEach((item) => {
+        const { x, y, w, h } = item.box;
+        ctx.save();
+        ctx.lineWidth = Math.max(4, Math.floor(canvas.width * 0.007));
+
+        if (item.selected) {
+          // Verde: Seleccionado para guardar
+          ctx.strokeStyle = '#10b981';
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+        } else {
+          // Gris/Rojo suave: Desmarcado
+          ctx.strokeStyle = '#64748b';
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        }
+
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+
+        // Etiqueta flotante con el texto del código
+        const fontSize = Math.max(14, Math.floor(canvas.width * 0.025));
+        ctx.font = `bold ${fontSize}px monospace`;
+        const label = `${item.selected ? '✓ ' : '✕ '}${item.serial}`;
+        const textWidth = ctx.measureText(label).width;
+
+        ctx.fillStyle = item.selected ? '#10b981' : '#475569';
+        ctx.fillRect(x, Math.max(0, y - fontSize - 8), textWidth + 12, fontSize + 8);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, x + 6, Math.max(fontSize, y - 6));
+
+        ctx.restore();
+      });
+    }
+
+    // 5. Soporte de toques directamente sobre el Canvas para seleccionar/deseleccionar
+    document.getElementById('photo-canvas').addEventListener('click', (e) => {
+      if (!imagenActual || codigosDetectados.length === 0) return;
+      const canvas = document.getElementById('photo-canvas');
+      const rect = canvas.getBoundingClientRect();
+
+      // Convertir coordenadas del click de pantalla a píxeles reales de la imagen
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const clickX = (e.clientX - rect.left) * scaleX;
+      const clickY = (e.clientY - rect.top) * scaleY;
+
+      // Determinar si el toque cayó dentro de la caja de algún código
+      let tocado = false;
+      codigosDetectados.forEach((item) => {
+        const { x, y, w, h } = item.box;
+        if (clickX >= x && clickX <= (x + w) && clickY >= y && clickY <= (y + h)) {
+          item.selected = !item.selected;
+          tocado = true;
+        }
+      });
+
+      if (tocado) {
+        redibujarCanvasFoto();
+        renderizarListaCodigosDetectados();
+      }
+    });
+
+    // 6. Lista interactiva con checkboxes
+    function renderizarListaCodigosDetectados() {
+      const container = document.getElementById('detected-checkboxes-list');
+      const btnConfirmar = document.getElementById('btn-confirmar-lote');
+      const btnText = document.getElementById('btn-confirm-text');
+
+      if (codigosDetectados.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">No se encontraron códigos legibles en esta foto.</p>';
+        btnConfirmar.setAttribute('disabled', 'true');
+        btnText.innerText = 'Registrar 0 Códigos Seleccionados';
+        return;
+      }
+
+      const seleccionadosCount = codigosDetectados.filter(c => c.selected).length;
+      btnText.innerText = `Registrar ${seleccionadosCount} Códigos Seleccionados`;
+      if (seleccionadosCount > 0) {
+        btnConfirmar.removeAttribute('disabled');
+      } else {
+        btnConfirmar.setAttribute('disabled', 'true');
+      }
+
+      container.innerHTML = codigosDetectados.map((it) => {
+        const esUPC = /^\d{12}$/.test(it.serial);
+        return `
+          <div onclick="toggleSelectCodigo(${it.id})" class="p-2 rounded-lg border ${it.selected ? 'bg-emerald-950/40 border-emerald-500/60' : 'bg-slate-950 border-slate-800'} flex items-center justify-between cursor-pointer transition-colors">
+            <div class="flex items-center gap-2 overflow-hidden mr-2">
+              <input type="checkbox" ${it.selected ? 'checked' : ''} class="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 pointer-events-none">
+              <div>
+                <span class="font-mono font-bold text-xs ${it.selected ? 'text-emerald-400' : 'text-slate-400'}">${it.serial}</span>
+                <span class="text-[10px] text-slate-500 ml-1 font-mono">${esUPC ? '(UPC Comercial)' : '(Serial)'}</span>
+              </div>
+            </div>
+            <span class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${it.selected ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-500'}">
+              ${it.selected ? 'Incluir' : 'Omitir'}
+            </span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleSelectCodigo(id) {
+      const item = codigosDetectados.find(c => c.id === id);
+      if (item) {
+        item.selected = !item.selected;
+        redibujarCanvasFoto();
+        renderizarListaCodigosDetectados();
+      }
+    }
+
+    function marcarTodos(val) {
+      codigosDetectados.forEach(c => c.selected = val);
+      redibujarCanvasFoto();
+      renderizarListaCodigosDetectados();
+    }
+
+    // 7. Confirmar e importar todos los códigos seleccionados
+    function importarCodigosSeleccionados() {
+      const seleccionados = codigosDetectados.filter(c => c.selected);
+      if (seleccionados.length === 0) return;
+
+      let guardados = 0;
+      seleccionados.forEach(c => {
+        // Registra sin pitidos por cada uno para no saturar el audio
+        const ok = registrarSerial(c.serial, true);
+        if (ok) guardados++;
+      });
+
+      soundSuccess();
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+      showToast(`¡${guardados} seriales registrados con éxito!`, "success", 2500);
+
+      // Limpiar vista y pasar a la lista
+      codigosDetectados = [];
+      document.getElementById('photo-preview-card').classList.add('hidden');
+      switchNav('list');
+    }
+
+    // --- NAVEGACIÓN ENTRE LAS 3 PESTAÑAS ---
     function showToast(msg, type = "success", duration = 1500) {
       const box = document.getElementById('toast-box');
       box.innerHTML = '';
@@ -432,20 +772,35 @@
 
     function switchNav(tab) {
       const sScan = document.getElementById('tab-scan');
+      const sPhoto = document.getElementById('tab-photo');
       const sList = document.getElementById('tab-list');
       const bScan = document.getElementById('btn-nav-scan');
+      const bPhoto = document.getElementById('btn-nav-photo');
       const bList = document.getElementById('btn-nav-list');
+      const subtitle = document.getElementById('header-subtitle');
+
+      // Ocultar todas las secciones
+      sScan.classList.add('hidden');
+      sPhoto.classList.add('hidden');
+      sList.classList.add('hidden');
+
+      // Restaurar colores de botones
+      bScan.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
+      bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
+      bList.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
 
       if (tab === 'scan') {
         sScan.classList.remove('hidden');
-        sList.classList.add('hidden');
         bScan.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        bList.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
+        subtitle.innerText = "Solo Serial (Code 128 / 39)";
+      } else if (tab === 'photo') {
+        sPhoto.classList.remove('hidden');
+        bPhoto.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
+        subtitle.innerText = "Foto Lote (Multi-Scan)";
       } else {
-        sScan.classList.add('hidden');
         sList.classList.remove('hidden');
         bList.className = 'flex-1 flex flex-col items-center py-1 text-indigo-400 font-bold text-xs';
-        bScan.className = 'flex-1 flex flex-col items-center py-1 text-slate-400 hover:text-slate-200 text-xs';
+        subtitle.innerText = "Seriales Registrados";
       }
     }
 

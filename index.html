@@ -61,7 +61,7 @@
   <!-- Barra Superior -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-md">
     <div>
-      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI</h1>
+      <h1 class="text-xs font-bold uppercase tracking-wider text-slate-200">Inventario TI 2.0</h1>
       <p class="text-[11px] text-emerald-400 font-semibold" id="header-mode-desc">Modo Continuo (Code 128/39)</p>
     </div>
     <span id="badge-total" class="bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
@@ -260,6 +260,7 @@
           type="url"
           id="sheets-url-input"
           placeholder="Pega la URL del Web App de Apps Script"
+          value="https://script.google.com/macros/s/AKfycbzukgpZ2TTaKSONpxBzy8-cxfWwhYzDa3nR7TXLM4h9EVwhlQ8je-KZ5EWsmgA0-_Wy/exec"
           class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
         />
         <button
@@ -318,6 +319,12 @@
   <script>
     const STORAGE_KEY = 'inventario_html_seriales';
     const SHEETS_URL_KEY = 'inv_sheets_webapp_url';
+    // URL del Web App de Apps Script ya desplegado, para que la app funcione
+    // "de fábrica" sin que el usuario tenga que pegarla manualmente. Si el
+    // usuario la cambia (por ejemplo para apuntar a otra hoja), esa nueva URL
+    // queda guardada en localStorage y tiene prioridad sobre esta por defecto.
+    const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzukgpZ2TTaKSONpxBzy8-cxfWwhYzDa3nR7TXLM4h9EVwhlQ8je-KZ5EWsmgA0-_Wy/exec';
+    let editandoIdx = null; // idx del serial que se está editando en la lista (null = ninguno)
     let html5QrCode = null;
     let isProcessing = false;
     let isTorchOn = false;
@@ -410,7 +417,45 @@
         return;
       }
 
-      container.innerHTML = items.map((it, idx) => `
+      container.innerHTML = items.map((it, idx) => {
+        // Modo edición: reemplaza la fila normal por inputs editables.
+        if (idx === editandoIdx) {
+          return `
+        <div class="bg-slate-900 border border-indigo-500/60 p-2.5 rounded-xl space-y-2 text-xs">
+          <div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Serial</label>
+            <input
+              type="text"
+              id="edit-serial-${idx}"
+              value="${escapeAttr(it.serial)}"
+              onkeydown="if(event.key==='Enter') guardarEdicion(${idx}); if(event.key==='Escape') cancelarEdicion();"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Observación</label>
+            <input
+              type="text"
+              id="edit-obs-${idx}"
+              value="${escapeAttr(it.observacion || '')}"
+              onkeydown="if(event.key==='Enter') guardarEdicion(${idx}); if(event.key==='Escape') cancelarEdicion();"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div class="flex gap-2 pt-0.5">
+            <button onclick="guardarEdicion(${idx})" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded-lg text-[11px]">
+              ✓ Guardar
+            </button>
+            <button onclick="cancelarEdicion()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-1.5 rounded-lg text-[11px]">
+              ✕ Cancelar
+            </button>
+          </div>
+        </div>
+      `;
+        }
+
+        // Fila normal (modo lectura).
+        return `
         <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex justify-between items-center text-xs">
           <div class="overflow-hidden mr-2">
             <div class="flex items-center gap-1.5">
@@ -420,20 +465,91 @@
             <p class="text-[11px] text-slate-400 truncate">${it.observacion || '<i class="text-slate-600">Sin nota</i>'}</p>
             <span class="text-[10px] text-slate-500 font-mono">${it.fecha}</span>
           </div>
-          <button onclick="eliminarItem(${idx})" class="text-slate-500 hover:text-rose-400 p-1.5 flex-shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-            </svg>
-          </button>
+          <div class="flex items-center gap-0.5 flex-shrink-0">
+            <button onclick="iniciarEdicion(${idx})" class="text-slate-500 hover:text-indigo-400 p-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+            </button>
+            <button onclick="eliminarItem(${idx})" class="text-slate-500 hover:text-rose-400 p-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       actualizarBadgeSync();
+
+      // Si quedó una edición abierta, enfocar el campo de serial automáticamente.
+      if (editandoIdx !== null) {
+        const campoSerial = document.getElementById(`edit-serial-${editandoIdx}`);
+        if (campoSerial) { campoSerial.focus(); campoSerial.select(); }
+      }
+    }
+
+    // Escapa comillas/ángulos para poder inyectar valores dentro de atributos
+    // value="..." sin romper el HTML generado dinámicamente.
+    function escapeAttr(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function iniciarEdicion(idx) {
+      editandoIdx = idx;
+      renderizarLista();
+    }
+
+    function cancelarEdicion() {
+      editandoIdx = null;
+      renderizarLista();
+    }
+
+    function guardarEdicion(idx) {
+      const items = getDatos();
+      const item = items[idx];
+      if (!item) { editandoIdx = null; renderizarLista(); return; }
+
+      const campoSerial = document.getElementById(`edit-serial-${idx}`);
+      const campoObs = document.getElementById(`edit-obs-${idx}`);
+      const nuevoSerial = limpiarSerial(campoSerial ? campoSerial.value : item.serial);
+      const nuevaObs = campoObs ? campoObs.value : item.observacion;
+
+      if (!nuevoSerial) {
+        showToast("El serial no puede quedar vacío", "warn", 2200);
+        return;
+      }
+
+      // Evitar duplicados contra otros seriales (excluyendo el que se edita).
+      const duplicado = items.some((i, i2) => i2 !== idx && i.serial.toUpperCase() === nuevoSerial.toUpperCase());
+      if (duplicado) {
+        showToast(`Ya existe otro serial: ${nuevoSerial}`, "warn", 2600);
+        return;
+      }
+
+      const cambioAlgo = item.serial !== nuevoSerial || (item.observacion || '') !== (nuevaObs || '');
+      item.serial = nuevoSerial;
+      item.observacion = nuevaObs;
+      // El ID no cambia: al re-sincronizar, el Web App de Apps Script hace un
+      // UPSERT por ID, así que esta edición sobrescribirá la misma fila en
+      // Sheets en vez de crear una nueva. Por eso, si cambió algo, se marca
+      // como pendiente de sincronizar de nuevo.
+      if (cambioAlgo) item.synced = false;
+
+      editandoIdx = null;
+      guardarDatos(items);
+      showToast(`Actualizado: ${nuevoSerial}`, "success", 1800);
     }
 
     function eliminarItem(idx) {
       const items = getDatos();
       const borrado = items.splice(idx, 1);
+      editandoIdx = null; // por si había otra fila en edición, evita índices desfasados
       guardarDatos(items);
       showToast(`Eliminado: ${borrado[0].serial}`, "warn");
     }
@@ -1831,8 +1947,12 @@
       const savedObs = localStorage.getItem('inv_html_obs');
       if (savedObs) document.getElementById('obs-input').value = savedObs;
 
-      const savedSheetsUrl = localStorage.getItem(SHEETS_URL_KEY);
-      if (savedSheetsUrl) document.getElementById('sheets-url-input').value = savedSheetsUrl;
+      // Si el usuario ya guardó/cambió una URL antes, esa manda. Si no,
+      // se usa la URL del Web App por defecto (ya embebida en el HTML) y se
+      // guarda en localStorage para que quede consistente desde el inicio.
+      const savedSheetsUrl = localStorage.getItem(SHEETS_URL_KEY) || DEFAULT_SHEETS_URL;
+      document.getElementById('sheets-url-input').value = savedSheetsUrl;
+      localStorage.setItem(SHEETS_URL_KEY, savedSheetsUrl);
 
       document.getElementById('select-preproc').value = metodoPreproc;
       document.getElementById('select-decoder').value = libreriaDecoder;
